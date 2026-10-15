@@ -418,6 +418,12 @@ export class Controller {
       } else this.hooks.toast('No idle Engineers');
       return;
     }
+    if (k === 'F2') {
+      e.preventDefault();
+      const army = this.world.entities.filter((x) => x.alive && x.team === HUMAN && x.isUnit && x.kind !== 'engineer' && !!x.udef?.weapon);
+      this.setSelection(army.map((x) => x.id));
+      return;
+    }
     if (k === 'Home') {
       const hq = this.world.entities.find((x) => x.alive && x.team === HUMAN && x.kind === 'hq');
       if (hq) this.centerOn(hq.x, hq.y);

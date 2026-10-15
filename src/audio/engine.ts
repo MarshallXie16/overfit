@@ -239,7 +239,8 @@ export class AudioEngine {
     const bufs = this.bank.get(name);
     if (!bufs || bufs.length === 0) return;
 
-    let gain = def.gain * (opts?.vol ?? 1);
+    const vol = opts?.vol;
+    let gain = def.gain * (vol !== undefined && Number.isFinite(vol) ? vol : 1);
     let pan = 0;
     let isFar = false;
     const positional = this.hasListener && opts !== undefined && opts.x !== undefined && opts.y !== undefined;
@@ -329,7 +330,9 @@ export class AudioEngine {
     const buf = bufs[vi];
 
     const pv = def.pitchVar ?? 0.04;
-    const rate = clamp((opts?.pitch ?? 1) * (1 + (Math.random() * 2 - 1) * pv), 0.25, 4);
+    const pitch = opts?.pitch;
+    const base = pitch !== undefined && Number.isFinite(pitch) && pitch > 0 ? pitch : 1;
+    const rate = clamp(base * (1 + (Math.random() * 2 - 1) * pv), 0.25, 4);
     const src = ctx.createBufferSource();
     src.buffer = buf;
     src.playbackRate.value = rate;
@@ -407,18 +410,22 @@ export class AudioEngine {
   // ---------------------------------------------------- listener / mix ---
 
   setListener(x: number, y: number, viewRadius: number): void {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
     this.lx = x;
     this.ly = y;
-    this.lr = viewRadius > 0 ? viewRadius : 1;
+    this.lr = Number.isFinite(viewRadius) && viewRadius > 0 ? viewRadius : 1;
     this.hasListener = true;
   }
 
   setVolumes(v: VolumeSettings): void {
-    if (v.master !== undefined) this.vol.master = clamp(v.master, 0, 1);
-    if (v.sfx !== undefined) this.vol.sfx = clamp(v.sfx, 0, 1);
-    if (v.music !== undefined) this.vol.music = clamp(v.music, 0, 1);
+    const prev = { ...this.vol };
+    const ok = (x: number | undefined): x is number => x !== undefined && Number.isFinite(x);
+    if (ok(v.master)) this.vol.master = clamp(v.master, 0, 1);
+    if (ok(v.sfx)) this.vol.sfx = clamp(v.sfx, 0, 1);
+    if (ok(v.music)) this.vol.music = clamp(v.music, 0, 1);
     const ctx = this.ctx;
     if (!ctx) return;
+    if (prev.master === this.vol.master && prev.sfx === this.vol.sfx && prev.music === this.vol.music) return;
     const at = ctx.currentTime;
     this.master?.gain.setTargetAtTime(this.vol.master, at, 0.03);
     this.sfxWorld?.gain.setTargetAtTime(this.vol.sfx, at, 0.03);

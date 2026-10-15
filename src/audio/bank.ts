@@ -28,7 +28,8 @@ export async function renderOne(name: string, variant: number, info?: RenderInfo
   const len = Math.ceil(def.dur * BANK_RATE);
   const ctx = new OfflineAudioContext(ch, len, BANK_RATE);
   const gate = ctx.createGain();
-  const fade = Math.min(0.04, def.dur * 0.3);
+  // end gate: longer, gentler fade for long sounds (stingers), short for clicks
+  const fade = Math.min(0.3, Math.max(0.01, def.dur * 0.1));
   gate.gain.setValueAtTime(1, 0);
   gate.gain.setValueAtTime(1, def.dur - fade);
   gate.gain.linearRampToValueAtTime(0, def.dur - 0.001);

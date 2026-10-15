@@ -96,39 +96,46 @@ function bell(k: Kit, dest: AudioNode, t: number, f: number, peak: number, tau: 
 
 /** Layered explosion. s ≈ 0.45 small, 1 big, 1.6 huge. */
 function explosion(k: Kit, dest: AudioNode, t: number, s: number): void {
-  const drive = k.shaper(softClip(2.2), dest);
+  const rumbleCut = k.filter('highpass', 35, 0.7, dest);
+  const drive = k.shaper(softClip(2.5), rumbleCut);
   const bodyTau = 0.07 + 0.26 * s;
-  thump(k, drive, t, k.r(85, 115), 28, 0.15 + 0.3 * s, 1.0, 0.08 + 0.2 * s);
-  thump(k, drive, t, k.r(200, 260), 55, 0.05, 0.45, 0.03 + 0.03 * s);
-  burst(k, drive, t, 'white', 'highpass', 1000, 0.7, 0.8, 0.0006, 0.01 + 0.012 * s);
+  // sub thump (kept moderate: the drive adds harmonics small speakers can play)
+  thump(k, drive, t, k.r(85, 115), 42, 0.15 + 0.3 * s, 0.28, 0.08 + 0.2 * s);
+  // mid punch
+  thump(k, drive, t, k.r(220, 280), 110, 0.08, 0.4, 0.03 + 0.04 * s);
+  // crack
+  burst(k, drive, t, 'white', 'highpass', 1200, 0.7, 1.0, 0.0006, 0.012 + 0.012 * s);
   {
+    // low body: brown noise, lowpass sweeping down
     const g = k.vca(drive);
-    perc(g.gain, t, 1.0, 0.003, bodyTau);
+    perc(g.gain, t, 0.4, 0.003, bodyTau);
     const lp = k.filter('lowpass', 3000, 0.9, g);
-    glide(lp.frequency, t, 2600 + 1600 * s, 140, 0.25 + 1.0 * s);
-    k.noise('brown', t, t + bodyTau * 7 + 0.02, lp);
+    glide(lp.frequency, t, 2600 + 1600 * s, 300, 0.25 + 1.0 * s);
+    k.noise('brown', t, t + bodyTau * 7 + 0.02, k.filter('highpass', 90, 0.7, lp));
   }
   {
-    const tau = 0.05 + 0.18 * s;
+    // mid roar: pink noise band sweeping down — the audible "crunch"
+    const tau = 0.06 + 0.22 * s;
     const g = k.vca(drive);
-    perc(g.gain, t, 0.45, 0.008, tau);
-    const bp = k.filter('bandpass', 900, 0.9, g);
-    glide(bp.frequency, t, 1600, 250, 0.3 + 0.7 * s);
+    perc(g.gain, t, 1.5, 0.006, tau);
+    const bp = k.filter('bandpass', 900, 0.8, g);
+    glide(bp.frequency, t, 1400, 450, 0.3 + 0.8 * s);
     k.noise('pink', t, t + tau * 7 + 0.02, bp);
   }
   {
+    // crackle / debris sizzle tail
     const len = 0.35 + 1.1 * s;
     const g = k.vca(dest);
-    perc(g.gain, t + 0.02, 0.3, 0.01, len * 0.4);
-    const bp = k.filter('bandpass', 2400, 0.7, g);
+    perc(g.gain, t + 0.02, 0.7, 0.01, len * 0.4);
+    const bp = k.filter('bandpass', 2600, 0.5, g);
     k.data(genCrackle(k.rng, len, 500 + 700 * s, 20), t + 0.02, bp);
   }
   if (s >= 0.9) {
     const n = Math.round(3 * s);
     for (let i = 0; i < n; i++) {
       const tt = t + k.r(0.12, 0.25 + 0.5 * s);
-      burst(k, dest, tt, 'white', 'bandpass', k.r(1500, 4000), 3, 0.15, 0.001, 0.012);
-      thump(k, dest, tt, k.r(90, 140), 45, 0.06, 0.2, 0.04);
+      burst(k, dest, tt, 'white', 'bandpass', k.r(1500, 4000), 3, 0.2, 0.001, 0.012);
+      burst(k, dest, tt, 'pink', 'bandpass', k.r(400, 900), 1, 0.25, 0.002, 0.03);
     }
   }
 }
@@ -252,34 +259,36 @@ export const SFX: Record<SfxName, SfxDef> = {
     dur: 1.3, variants: 2, gain: 0.65, minMs: 90, maxVoices: 4, priority: 1.5,
     render(k) {
       const t = k.t, d = k.shaper(softClip(2.5), k.out);
-      thump(k, d, t, k.r(140, 170), 36, 0.14, 1.0, 0.16);
-      burst(k, d, t, 'white', 'highpass', 1300, 0.7, 0.8, 0.0005, 0.012);
+      thump(k, d, t, k.r(140, 170), 45, 0.14, 0.3, 0.16);
+      burst(k, d, t, 'white', 'highpass', 1300, 0.7, 1.0, 0.0005, 0.014);
       const g = k.vca(d);
-      perc(g.gain, t, 0.9, 0.003, 0.11);
+      perc(g.gain, t, 0.55, 0.003, 0.11);
       const lp = k.filter('lowpass', 2000, 0.8, g);
       glide(lp.frequency, t, 2200, 180, 0.6);
       k.noise('brown', t, t + 0.9, lp);
-      burst(k, d, t, 'pink', 'bandpass', 600, 0.9, 0.4, 0.004, 0.08);
-      burst(k, k.out, t + 0.13, 'pink', 'lowpass', 700, 0.7, 0.18, 0.02, 0.12);
-      burst(k, k.out, t + 0.31, 'pink', 'lowpass', 500, 0.7, 0.08, 0.03, 0.15);
+      const rf = burst(k, d, t, 'pink', 'bandpass', 900, 0.7, 0.9, 0.004, 0.08);
+      glide(rf.frequency, t, 1100, 350, 0.4);
+      burst(k, k.out, t + 0.13, 'pink', 'bandpass', 600, 0.7, 0.25, 0.02, 0.12);
+      burst(k, k.out, t + 0.31, 'pink', 'bandpass', 450, 0.7, 0.12, 0.03, 0.15);
     },
   },
   artillery_fire: {
     dur: 2.1, gain: 0.7, minMs: 150, maxVoices: 3, priority: 1.5,
     render(k) {
       const t = k.t, o = k.out, d = k.shaper(softClip(2.5), o);
-      thump(k, d, t, 120, 26, 0.25, 1.0, 0.24);
-      burst(k, d, t, 'white', 'highpass', 1100, 0.7, 0.8, 0.0005, 0.016);
+      thump(k, d, t, 120, 38, 0.25, 0.3, 0.24);
+      burst(k, d, t, 'white', 'highpass', 1100, 0.7, 1.0, 0.0005, 0.018);
       const g = k.vca(d);
-      perc(g.gain, t, 1.0, 0.004, 0.2);
+      perc(g.gain, t, 0.55, 0.004, 0.2);
       const lp = k.filter('lowpass', 1600, 0.8, g);
       glide(lp.frequency, t, 1800, 120, 1.0);
       k.noise('brown', t, t + 1.6, lp);
-      burst(k, d, t, 'pink', 'bandpass', 450, 0.9, 0.45, 0.005, 0.14);
-      [[0.22, 0.25, 600], [0.5, 0.14, 450], [0.85, 0.07, 320]].forEach(([dt, a, f]) =>
-        burst(k, o, t + dt, 'pink', 'lowpass', f, 0.7, a, 0.03, 0.16));
+      const rf = burst(k, d, t, 'pink', 'bandpass', 800, 0.7, 0.9, 0.005, 0.14);
+      glide(rf.frequency, t, 1000, 300, 0.7);
+      [[0.22, 0.35, 650], [0.5, 0.2, 500], [0.85, 0.1, 380]].forEach(([dt, a, f]) =>
+        burst(k, o, t + dt, 'pink', 'bandpass', f, 0.7, a, 0.03, 0.16));
       const rg = k.vca(o);
-      ahr(rg.gain, t, 0.3, 0.05, 0.4, 1.2);
+      ahr(rg.gain, t, 0.2, 0.05, 0.4, 1.2);
       k.noise('brown', t, t + 1.8, k.filter('lowpass', 160, 0.7, rg));
     },
   },
@@ -288,7 +297,8 @@ export const SFX: Record<SfxName, SfxDef> = {
     render(k) {
       const t = k.t, d = k.shaper(softClip(3), k.out);
       burst(k, d, t, 'white', 'bandpass', k.r(1500, 2100), 0.9, 1.0, 0.0005, 0.011);
-      thump(k, d, t, k.r(170, 200), 55, 0.05, 0.95, 0.03);
+      burst(k, d, t, 'white', 'highpass', 4000, 0.7, 0.55, 0.0003, 0.006);
+      thump(k, d, t, k.r(170, 200), 55, 0.05, 0.7, 0.03);
       burst(k, d, t, 'pink', 'lowpass', 1100, 0.8, 0.6, 0.001, 0.04);
       tone(k, d, t, 'square', 95, 60, 0.03, 0.12, 0.001, 0.015);
       burst(k, k.out, t + 0.03, 'pink', 'bandpass', 800, 0.7, 0.1, 0.01, 0.06);
@@ -350,15 +360,18 @@ export const SFX: Record<SfxName, SfxDef> = {
     render(k) {
       const t = k.t, o = k.out;
       explosion(k, o, t, 1.6);
-      thump(k, o, t, 55, 22, 0.6, 0.8, 0.45);
+      thump(k, o, t, 55, 22, 0.6, 0.45, 0.45);
       for (const p of [-0.75, 0.75]) {
         const cg = k.vca(k.pan(p, o));
-        ahr(cg.gain, t + 0.15, 0.3, 0.1, 1.0, 2.0);
+        ahr(cg.gain, t + 0.15, 0.45, 0.1, 1.0, 2.0);
         k.data(genCrackle(k.rng, 3.2, 600, 40), t + 0.15, k.filter('bandpass', 2000, 0.6, cg));
       }
       const rg = k.vca(o);
-      ahr(rg.gain, t, 0.45, 0.15, 1.0, 2.4);
+      ahr(rg.gain, t, 0.3, 0.15, 1.0, 2.4);
       k.noise('brown', t, t + 3.8, k.filter('lowpass', 170, 0.8, rg));
+      const mg = k.vca(o);
+      ahr(mg.gain, t + 0.1, 0.25, 0.1, 0.8, 1.6);
+      k.noise('pink', t, t + 3.6, k.filter('bandpass', 500, 0.8, mg));
     },
   },
   impact_metal: {
@@ -440,10 +453,10 @@ export const SFX: Record<SfxName, SfxDef> = {
     dur: 0.8, variants: 2, gain: 0.55, minMs: 90, maxVoices: 3,
     render(k) {
       const t = k.t, o = k.out, d = k.shaper(softClip(2.5), o);
-      thump(k, d, t, 130, 40, 0.1, 1.0, 0.09);
-      burst(k, d, t, 'pink', 'lowpass', 2200, 0.8, 0.7, 0.001, 0.05);
-      burst(k, d, t, 'white', 'highpass', 2000, 0.7, 0.5, 0.0004, 0.008);
-      ring(k, o, t, k.r(150, 200), METAL, 0.35, 0.22);
+      thump(k, d, t, 130, 45, 0.1, 0.4, 0.09);
+      burst(k, d, t, 'pink', 'bandpass', 900, 0.7, 0.9, 0.001, 0.05);
+      burst(k, d, t, 'white', 'highpass', 2000, 0.7, 0.6, 0.0004, 0.008);
+      ring(k, o, t, k.r(170, 230), METAL, 0.5, 0.22);
       const sg = k.vca(o);
       ahr(sg.gain, t + 0.18, 0.12, 0.04, 0.12, 0.1);
       const so = k.osc('sawtooth', 280, t + 0.18, t + 0.5, k.filter('bandpass', 1200, 4, sg));
@@ -485,16 +498,18 @@ export const SFX: Record<SfxName, SfxDef> = {
     dur: 1.7, variants: 2, gain: 0.75, minMs: 250, maxVoices: 2, priority: 2,
     render(k) {
       const t = k.t, o = k.out, d = k.shaper(softClip(2), o);
-      thump(k, d, t, 75, 26, 0.25, 1.0, 0.22);
+      thump(k, d, t, 75, 36, 0.25, 0.38, 0.22);
       const g = k.vca(d);
-      perc(g.gain, t, 0.8, 0.004, 0.18);
+      perc(g.gain, t, 0.5, 0.004, 0.18);
       const lp = k.filter('lowpass', 500, 0.8, g);
       glide(lp.frequency, t, 600, 90, 0.8);
       k.noise('brown', t, t + 1.5, lp);
-      burst(k, d, t, 'pink', 'lowpass', 1800, 0.7, 0.4, 0.001, 0.03);
-      ring(k, o, t + 0.01, k.r(80, 100), METAL, 0.25, 0.35);
+      burst(k, d, t, 'pink', 'lowpass', 1800, 0.7, 0.5, 0.001, 0.03);
+      const cf = burst(k, d, t, 'pink', 'bandpass', 600, 0.8, 0.8, 0.003, 0.1);
+      glide(cf.frequency, t, 700, 250, 0.5);
+      ring(k, o, t + 0.01, k.r(130, 170), METAL, 0.4, 0.35);
       const cg = k.vca(o);
-      perc(cg.gain, t + 0.05, 0.25, 0.02, 0.3);
+      perc(cg.gain, t + 0.05, 0.4, 0.02, 0.3);
       k.data(genCrackle(k.rng, 1.2, 250, 10), t + 0.05, k.filter('bandpass', 1500, 0.8, cg));
     },
   },
@@ -559,16 +574,16 @@ export const SFX: Record<SfxName, SfxDef> = {
     dur: 0.6, variants: 3, gain: 0.42, minMs: 60, maxVoices: 3, pitchVar: 0.06,
     render(k) {
       const t = k.t, o = k.out;
-      thump(k, o, t, 120, 60, 0.05, 0.6, 0.04);
-      burst(k, o, t, 'brown', 'lowpass', 600, 0.7, 0.8, 0.003, 0.05);
+      thump(k, o, t, 120, 60, 0.05, 0.25, 0.04);
+      burst(k, o, t, 'pink', 'bandpass', 500, 0.6, 0.7, 0.003, 0.05);
       let tt = t + k.r(0.05, 0.1);
       for (let i = 0; i < 3; i++) {
         burst(k, o, tt, 'white', 'bandpass', k.r(2500, 5000), 3, 0.25, 0.0004, 0.004);
         tt += k.r(0.03, 0.07);
       }
       const t2 = t + k.r(0.16, 0.24);
-      thump(k, o, t2, 90, 50, 0.05, 0.45, 0.04);
-      burst(k, o, t2, 'brown', 'lowpass', 400, 0.7, 0.5, 0.004, 0.05);
+      thump(k, o, t2, 90, 50, 0.05, 0.2, 0.04);
+      burst(k, o, t2, 'pink', 'bandpass', 380, 0.6, 0.5, 0.004, 0.05);
     },
   },
   building_collapse: {
@@ -576,9 +591,9 @@ export const SFX: Record<SfxName, SfxDef> = {
     render(k) {
       const t = k.t, o = k.out, d = k.shaper(softClip(2), o);
       burst(k, d, t, 'white', 'highpass', 900, 0.7, 0.8, 0.0005, 0.02);
-      thump(k, d, t, 95, 30, 0.2, 1.0, 0.18);
+      thump(k, d, t, 95, 38, 0.2, 0.35, 0.18);
       const rg = k.vca(d);
-      ahr(rg.gain, t, 0.9, 0.12, 1.3, 1.6);
+      ahr(rg.gain, t, 0.4, 0.12, 1.3, 1.6);
       const am = k.vca(rg, 0);
       k.data(genSteps(k.rng, 3.2, 40, 140, 0.35, 1.0), t, am.gain);
       const rl = k.filter('lowpass', 300, 0.9, am);
@@ -587,12 +602,12 @@ export const SFX: Record<SfxName, SfxDef> = {
       for (let i = 0; i < 7; i++) {
         const tt = t + k.r(0.15, 2.0);
         const p = k.pan(k.r(-0.7, 0.7), d);
-        thump(k, p, tt, k.r(70, 120), 30, 0.12, k.r(0.3, 0.7), k.r(0.06, 0.14));
-        burst(k, p, tt, 'pink', 'lowpass', 1500, 0.7, 0.35, 0.002, 0.05);
+        thump(k, p, tt, k.r(70, 120), 40, 0.12, k.r(0.12, 0.25), k.r(0.06, 0.14));
+        burst(k, p, tt, 'pink', 'bandpass', k.r(500, 1100), 0.7, 0.6, 0.002, 0.05);
       }
       for (const p of [-0.6, 0.6]) {
         const cg = k.vca(k.pan(p, o));
-        ahr(cg.gain, t + 0.1, 0.4, 0.1, 1.2, 1.5);
+        ahr(cg.gain, t + 0.1, 0.6, 0.1, 1.2, 1.5);
         k.data(genCrackle(k.rng, 3.0, 400, 60), t + 0.1, k.filter('bandpass', 1800, 0.6, cg));
       }
       const mg = k.vca(o);
@@ -651,7 +666,7 @@ export const SFX: Record<SfxName, SfxDef> = {
     dur: 1.9, gain: 0.65, minMs: 300, maxVoices: 2, priority: 2,
     render(k) {
       const t = k.t, o = k.out, d = k.shaper(softClip(2), o);
-      thump(k, d, t, 140, 38, 0.35, 1.0, 0.25);
+      thump(k, d, t, 140, 38, 0.35, 0.55, 0.25);
       zap(k, o, t, 0.9, 2800, 50, 0.9);
       const sg = k.vca(o);
       perc(sg.gain, t, 0.6, 0.01, 0.25);
@@ -699,15 +714,18 @@ export const SFX: Record<SfxName, SfxDef> = {
       const ti = t + 0.11;
       explosion(k, o, ti, 1.6);
       zap(k, o, ti, 1.2, 2200, 45, 0.7);
-      thump(k, o, ti, 60, 20, 0.6, 0.9, 0.5);
+      thump(k, o, ti, 60, 20, 0.6, 0.5, 0.5);
       for (const p of [-0.8, 0.8]) {
         const cg = k.vca(k.pan(p, o));
         ahr(cg.gain, ti + 0.1, 0.35, 0.1, 1.2, 2.0);
         k.data(genCrackle(k.rng, 3.4, 700, 40), ti + 0.1, k.filter('bandpass', 2200, 0.6, cg));
       }
       const rg = k.vca(o);
-      ahr(rg.gain, ti, 0.5, 0.2, 1.2, 2.2);
+      ahr(rg.gain, ti, 0.3, 0.2, 1.2, 2.2);
       k.noise('brown', ti, ti + 3.8, k.filter('lowpass', 180, 0.8, rg));
+      const mg = k.vca(o);
+      ahr(mg.gain, ti + 0.1, 0.25, 0.1, 0.9, 1.8);
+      k.noise('pink', ti, ti + 3.6, k.filter('bandpass', 550, 0.8, mg));
     },
   },
   supply_drop: {

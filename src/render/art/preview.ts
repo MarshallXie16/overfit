@@ -205,7 +205,7 @@ function group(key: string): string {
 
 function render() {
   const keys = atlas.keys().filter((k) => k.startsWith(only));
-  hdr.innerHTML = `<b>OVERFIT</b> art atlas — <b>${atlas.keys().length}</b> keys generated in <b class="${genMs > 1500 ? 'ax' : ''}">${genMs.toFixed(0)} ms</b>` +
+  hdr.innerHTML = `<b>OVERFIT</b> art atlas — <b>${atlas.keys().length}</b> keys generated in <b class="${genMs > 1500 ? 'ax' : ''}">${genMs.toFixed(0)} ms</b> (${Object.entries(atlas.stageMs).map(([k, v]) => `${k} ${v}`).join(', ')})` +
     ` · zoom ${zoom}× ${only ? `· only "${only}"` : ''} · <span style="color:#7d8691">?zoom=2 ?only=unit:skitter ?scene=0 ?ppt=64 ?light=1</span>`;
   (window as unknown as { __ART_MS: number }).__ART_MS = genMs;
   if (showScene && !only) {
@@ -238,7 +238,11 @@ function render() {
     for (const k of ks) {
       const fig = document.createElement('figure');
       if (light) fig.className = 'light';
-      const cv = atlas.get(k)!;
+      const src = atlas.get(k)!;
+      const cv = document.createElement('canvas');
+      cv.width = src.width;
+      cv.height = src.height;
+      cv.getContext('2d')!.drawImage(src, 0, 0);
       const m = atlas.meta(k);
       cv.style.width = `${cv.width * zoom}px`;
       cv.style.height = `${cv.height * zoom}px`;

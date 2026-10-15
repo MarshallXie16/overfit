@@ -65,7 +65,7 @@ export class Menus {
           <button class="btn" data-a="endless">Endless Swarm<small>Survive the ever-growing swarm · Daily challenge #${dailyNumber()}</small></button>
           <div class="row"><button class="btn" data-a="howto">How to Play</button><button class="btn" data-a="settings">Settings</button></div>
         </div>
-        <div class="foot">An RTS about teaching a machine the wrong lessons · v0.9</div>
+        <div class="foot">An RTS about teaching a machine the wrong lessons · v0.9${window.innerWidth < 1000 ? '<br><span style="color:var(--amber)">Best played on a desktop with mouse & keyboard.</span>' : ''}</div>
       </div>`, 'title');
     this.on('[data-a=campaign]', () => this.campaign());
     this.on('[data-a=skirmish]', () => this.skirmish());
@@ -176,6 +176,7 @@ export class Menus {
       <tr><td>Control groups</td><td><kbd>Ctrl</kbd>+<kbd>1-9</kbd> set · <kbd>1-9</kbd> select · double-tap to centre</td></tr>
       <tr><td>Camera</td><td>Arrow keys · screen edge · middle-drag · wheel zoom · minimap</td></tr>
       <tr><td>Idle Engineer / Last alert / Base</td><td><kbd>.</kbd> / <kbd>Space</kbd> / <kbd>Home</kbd></td></tr>
+      <tr><td>Select whole army</td><td><kbd>F2</kbd></td></tr>
       <tr><td>Commander Protocols</td><td><kbd>F5</kbd>–<kbd>F8</kbd></td></tr>
       <tr><td>Tactical pause / Menu</td><td><kbd>P</kbd> (orders still work) / <kbd>Esc</kbd></td></tr></table>
       <button class="btn" data-a="back" style="margin-top:16px">Back</button></div>`);

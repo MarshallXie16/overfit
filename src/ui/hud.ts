@@ -85,7 +85,7 @@ export class Hud {
       <div data-k="radio"></div>
       <div class="toast" data-k="toast"></div>
       <div class="bottom">
-        <div class="minimap panel clip"><canvas data-k="minimap" width="200" height="186"></canvas></div>
+        <div class="minimap panel clip"><canvas data-k="minimap" width="184" height="176"></canvas></div>
         <div class="selpanel panel clip" data-k="sel"></div>
         <div class="cmdcard panel clip" data-k="card"></div>
       </div>
@@ -500,7 +500,8 @@ export class Hud {
   private renderSel(): void {
     const sel = this.ctl.selectedEntities();
     const p = this.el.sel;
-    if (!sel.length) { p.innerHTML = `<div class="sel-info"><div class="desc" style="margin-top:8px">Left-click or drag to select. Right-click to command. <kbd>.</kbd> idle Engineer · <kbd>Space</kbd> last alert · <kbd>P</kbd> pause · <kbd>Ctrl+1-9</kbd> groups</div></div>`; return; }
+    p.classList.toggle('empty', !sel.length);
+    if (!sel.length) { p.innerHTML = `<div class="desc" style="font-size:12px;color:var(--muted)">Drag to select · Right-click to command · <kbd>.</kbd> idle Engineer · <kbd>Space</kbd> last alert · <kbd>P</kbd> pause · <kbd>Esc</kbd> menu</div>`; return; }
     if (sel.length === 1) {
       const e = sel[0];
       const def = (e.udef ?? e.bdef) as UnitDef | BuildingDef | null;
