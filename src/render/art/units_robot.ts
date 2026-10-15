@@ -69,7 +69,7 @@ const phaseOf = (f: number) => (f / 4) * TAU;
 
 export function drawSkitter(L: Layers, pal: TeamPal, f: number): void {
   const g = L.b;
-  contact(L.p, 0, 0, 20, 18, 0.3);
+  contact(L.p, 0, 0, 20, 18, 0.16);
   const ph = phaseOf(f);
   const hips: Pt[] = [[5, 4.5], [0.5, 5.5], [-4, 4.5]];
   const feet: Pt[] = [[16, 17], [1, 21], [-15, 17]];
@@ -105,7 +105,7 @@ export function drawSkitter(L: Layers, pal: TeamPal, f: number): void {
 
 export function drawGunner(L: Layers, pal: TeamPal, f: number): void {
   const g = L.b;
-  contact(L.p, 0, 0, 24, 22, 0.3);
+  contact(L.p, 0, 0, 24, 22, 0.16);
   const ph = phaseOf(f);
   const legs: [Pt, Pt, number][] = [[[7, 8], [20, 21], 1], [[-8, 8], [-20, 21], -1]];
   for (const s of [-1, 1]) {
@@ -152,7 +152,7 @@ export function drawGunner(L: Layers, pal: TeamPal, f: number): void {
 
 export function drawSapper(L: Layers, pal: TeamPal, f: number): void {
   const g = L.b;
-  contact(L.p, 0, 0, 19, 19, 0.32);
+  contact(L.p, 0, 0, 19, 19, 0.16);
   const ph = phaseOf(f);
   const angs = [0.75, 2.35, -0.75, -2.35];
   angs.forEach((a, i) => {
@@ -204,7 +204,7 @@ export function drawSapper(L: Layers, pal: TeamPal, f: number): void {
 
 export function drawBrute(L: Layers, pal: TeamPal, f: number): void {
   const g = L.b;
-  contact(L.p, 0, 0, 50, 48, 0.32);
+  contact(L.p, 0, 0, 50, 48, 0.16);
   const ph = phaseOf(f);
   const hips: Pt[] = [[13, 18], [-3, 22], [-18, 18]];
   const feet: Pt[] = [[29, 41], [-3, 47], [-33, 40]];
@@ -266,7 +266,7 @@ export function drawBrute(L: Layers, pal: TeamPal, f: number): void {
 
 export function drawLancer(L: Layers, pal: TeamPal, f: number): void {
   const g = L.b;
-  contact(L.p, 0, 0, 26, 24, 0.28);
+  contact(L.p, 0, 0, 26, 24, 0.16);
   const ph = phaseOf(f);
   const legs: [Pt, Pt, number][] = [[[3, 4.5], [18, 26], 1], [[-9, 4.5], [-28, 23], -1]];
   for (const s of [-1, 1]) {
@@ -375,7 +375,7 @@ export function drawWaspShadow(L: Layers): void {
 export function drawWarden(L: Layers, pal: TeamPal, f: number): void {
   const g = L.b;
   const e = L.e;
-  contact(L.p, 4, 6, 30, 28, 0.25);
+  contact(L.p, 0, 0, 30, 28, 0.16);
   // halo segments (ring frame floating around)
   const rot = f * (Math.PI / 12);
   for (let i = 0; i < 6; i++) {
@@ -460,7 +460,7 @@ export function drawWarden(L: Layers, pal: TeamPal, f: number): void {
 export function drawColossus(L: Layers, pal: TeamPal, f: number): void {
   const g = L.b;
   const e = L.e;
-  contact(L.p, 0, 0, 100, 92, 0.3);
+  contact(L.p, 0, 0, 100, 92, 0.16);
   const ph = phaseOf(f);
   const hips: Pt[] = [[38, 24], [14, 29], [-14, 29], [-40, 24]];
   const feet: Pt[] = [[84, 74], [30, 97], [-28, 97], [-82, 74]];

@@ -35,7 +35,7 @@ function boot(g: G, x: number, y: number) {
 function drawInfantry(L: Layers, sp: InfSpec, f: number) {
   const b = L.b;
   const st = STRIDE[f];
-  contact(L.p, 0.5, 0.5, 14, 14, 0.28);
+  contact(L.p, 0, 0, 14, 14, 0.16);
   // legs + boots
   for (const s of [-1, 1]) {
     const fx = 1.5 + st * 6.5 * (s < 0 ? 1 : -1);
@@ -455,7 +455,12 @@ export const INFANTRY: Record<string, InfSpec> = {
   ranger: RANGER,
 };
 
+/** Infantry art is drawn at this scale so the body fills ~0.65 tile and weapons reach ~0.8 tile. */
+export const INF_SCALE = 1.28;
+export const INF_CANVAS = 104;
+
 export function drawInfantryKind(kind: string, L: Layers, f: number): void {
+  for (const g of [L.p, L.m, L.b, L.e]) g.scale(INF_SCALE, INF_SCALE);
   drawInfantry(L, INFANTRY[kind], f);
 }
 
@@ -510,7 +515,7 @@ function hullDetails(g: G, x0: number, x1: number, hw: number, color: string, se
 
 export function drawBulldog(L: Layers, f: number): void {
   const g = L.b;
-  contact(L.p, 0, 0, 58, 46, 0.3);
+  contact(L.p, 0, 0, 58, 46, 0.16);
   for (const s of [-1, 1]) treadBand(g, -50, 50, s > 0 ? 23 : -36, s > 0 ? 36 : -23, f);
   const hull = roundPolyPath([-46, -24, 38, -24, 48, -14, 48, 14, 38, 24, -46, 24], 3);
   vol(g, hull, P.olive, [-46, -24, 94, 48], { hi: 0.22, lo: 0.42 });
@@ -591,7 +596,7 @@ export function drawBulldogTurret(L: Layers): void {
 
 export function drawVolt(L: Layers, f: number): void {
   const g = L.b;
-  contact(L.p, 0, 0, 58, 46, 0.3);
+  contact(L.p, 0, 0, 58, 46, 0.16);
   // wheels
   for (const s of [-1, 1]) {
     for (const wx of [-31, -3, 25]) {
@@ -689,7 +694,7 @@ export function drawVoltTurret(L: Layers, f = 0): void {
 
 export function drawThumper(L: Layers, f: number): void {
   const g = L.b;
-  contact(L.p, 0, 0, 62, 48, 0.3);
+  contact(L.p, 0, 0, 62, 48, 0.16);
   for (const s of [-1, 1]) treadBand(g, -54, 54, s > 0 ? 25 : -38, s > 0 ? 38 : -25, f);
   // recoil spade at rear
   vol(g, rrPath(-62, -19, 9, 38, 2), P.gunD, [-62, -19, 9, 38], { hi: 0.25 });

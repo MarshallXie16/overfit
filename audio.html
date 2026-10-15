@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OVERFIT Audio Bench</title>
+  <link rel="icon" href="data:," />
+  <style>
+    :root {
+      --bg: #0d0f12; --panel: #161a20; --line: #262c35; --text: #d6dbe2; --dim: #7d8794;
+      --amber: #f2a541; --teal: #3fc1b0; --crimson: #e0365a; --btn: #1d232b; --btn-hi: #27303a;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    header { padding: 14px 16px; border-bottom: 1px solid var(--line); display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
+    h1 { margin: 0; font-size: 16px; letter-spacing: 0.12em; color: var(--amber); }
+    #status { color: var(--dim); white-space: pre; }
+    main { padding: 12px 16px 40px; display: grid; gap: 14px; max-width: 1200px; }
+    section { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+    h2 { margin: 0 0 8px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--teal); }
+    .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    button { background: var(--btn); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 6px 9px; font: inherit; cursor: pointer; }
+    button:hover { background: var(--btn-hi); border-color: #3a4552; }
+    button.on { border-color: var(--amber); color: var(--amber); }
+    button.warn { border-color: #5a2633; color: #ff8aa2; }
+    label { display: inline-flex; gap: 6px; align-items: center; color: var(--dim); margin-right: 14px; }
+    input[type=range] { width: 150px; accent-color: var(--amber); }
+    .val { color: var(--text); min-width: 3.2em; display: inline-block; }
+    .meter { height: 8px; background: #0a0c0f; border: 1px solid var(--line); border-radius: 3px; width: 260px; position: relative; overflow: hidden; }
+    .meter > div { position: absolute; inset: 0 auto 0 0; background: var(--teal); width: 0; }
+    .meter > div.pk { background: var(--crimson); width: 2px; }
+    #log { color: var(--dim); white-space: pre-wrap; max-height: 160px; overflow: auto; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>OVERFIT // AUDIO BENCH</h1>
+    <div id="status">click anything to start audio</div>
+  </header>
+  <main>
+    <section>
+      <h2>Mix</h2>
+      <div class="row">
+        <label>master <input id="v-master" type="range" min="0" max="1" step="0.01" value="0.8" /><span class="val" id="v-master-v">0.80</span></label>
+        <label>sfx <input id="v-sfx" type="range" min="0" max="1" step="0.01" value="0.9" /><span class="val" id="v-sfx-v">0.90</span></label>
+        <label>music <input id="v-music" type="range" min="0" max="1" step="0.01" value="0.55" /><span class="val" id="v-music-v">0.55</span></label>
+        <button id="pause">pause: off</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <span style="color:var(--dim)">out</span>
+        <div class="meter"><div id="m-rms"></div><div id="m-pk" class="pk"></div></div>
+        <span id="m-txt" style="color:var(--dim)"></span>
+      </div>
+    </section>
+    <section>
+      <h2>Music</h2>
+      <div class="row">
+        <button data-music="menu">menu</button>
+        <button data-music="game">game</button>
+        <button data-music="none">none</button>
+        <label>intensity <input id="intensity" type="range" min="0" max="1" step="0.01" value="0" /><span class="val" id="intensity-v">0.00</span></label>
+        <button data-stinger="surge">stinger: surge</button>
+        <button data-stinger="epoch">stinger: epoch</button>
+        <button data-stinger="victory">stinger: victory</button>
+        <button data-stinger="defeat">stinger: defeat</button>
+      </div>
+    </section>
+    <section>
+      <h2>Positional test / stress</h2>
+      <div class="row">
+        <label><input id="posmode" type="checkbox" /> positional</label>
+        <label>source x (× view radius) <input id="posx" type="range" min="-3" max="3" step="0.05" value="0" /><span class="val" id="posx-v">0.00</span></label>
+        <button id="burst" class="warn">burst test: 300 random sounds in 1 s</button>
+      </div>
+      <div id="log"></div>
+    </section>
+    <div id="groups"></div>
+  </main>
+  <script type="module" src="/src/audio/preview.ts"></script>
+</body>
+</html>
