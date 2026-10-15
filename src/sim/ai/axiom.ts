@@ -15,27 +15,37 @@ const BASE_W: Record<string, number> = { skitter: 10, gunner: 7, sapper: 2.5, br
 export const AXIOM_BAL = {
   /** compute/s before structures & ramp */
   baseRate: 0.4,
-  farmCompute: 0.8,
+  farmCompute: 0.3,
   creepCompute: 0.0004,
   /** ramp(t) = 1 + (t / rampDiv) ^ rampExp */
-  rampDiv: 240,
-  rampExp: 1.25,
+  rampDiv: 300,
+  rampExp: 1.15,
   /** share of income banked for the next Surge */
-  surgeShare: 0.6,
+  surgeShare: 0.5,
+  /** how much DIFF.compute affects the home bank (0 = not at all, 1 = fully) */
+  bankDiff: 0.3,
   /** Surge n budget multiplier = min(1, surgeDamp0 + surgeDampStep * (n - 1)) */
   surgeDamp0: 0.45,
   surgeDampStep: 0.15,
   surgeMinInterval: 95,
   surgeIntervalStep: 4,
-  garrisonBase: 5,
-  garrisonPerThreat: 2,
+  garrisonBase: 8,
+  garrisonPerThreat: 4,
+  /** Fabricators AXIOM wants: fabsBase + threat / fabsThreatDiv (it saves Compute to build them) */
+  fabsBase: 2,
+  fabsThreatDiv: 3,
+  fabCost: 260,
+  /** structure self-repair on the Grid when not attacked for 10 s (fraction of max HP per second) */
+  structRegen: 0.004,
+  /** threat = 1 + time / threatTime + totalCompute / threatCompute (capped 10) */
   threatTime: 170,
+  threatCompute: 4000,
   /** emergency defenders spawned per second at an attacked Fabricator/Core/Vault: base + threat/div */
-  emergencyBase: 1,
+  emergencyBase: 2,
   emergencyThreatDiv: 4,
+  emergencyCoreMul: 2,
   /** emergency spawns may borrow from the Surge pool down to this much */
   emergencyPoolKeep: 100,
-  threatCompute: 4000,
   maxRobots: 1400,
 };
 const B = AXIOM_BAL;
@@ -85,12 +95,22 @@ export function updateAxiom(w: World, c: TickCache): void {
     rate += A.creepTiles * B.creepCompute;
     const ramp = 1 + Math.pow(w.time / B.rampDiv, B.rampExp);
     A.farms = farms;
-    A.computeRate = rate * ramp * D.compute * T.aggression;
-    const inc = A.computeRate * 0.5;
-    A.totalCompute += inc;
-    if (T.surges) { A.surgePool += inc * B.surgeShare; A.compute += inc * (1 - B.surgeShare); }
-    else A.compute += inc;
+    // Difficulty scales the Surge side of the economy; the home bank (garrisons, expansion, raids,
+    // emergency defence) uses bankDiff so AXIOM's base is a real fortress on every difficulty.
+    const base = rate * ramp * T.aggression;
+    const share = T.surges ? B.surgeShare : 0;
+    const surgeInc = base * share * D.compute * 0.5;
+    const bankInc = base * (1 - share) * (1 + (D.compute - 1) * B.bankDiff) * 0.5;
+    A.computeRate = (surgeInc + bankInc) * 2;
+    A.totalCompute += surgeInc + bankInc;
+    A.surgePool += surgeInc;
+    A.compute += bankInc;
     A.threat = Math.max(1, Math.min(10, 1 + Math.floor(w.time / B.threatTime + A.totalCompute / B.threatCompute)));
+    // structures on the Grid slowly self-repair once the fighting stops
+    for (const b of c.axiomBuildings) {
+      if (!b.built || b.hp >= b.maxHp || w.time - b.attackedAt < 10 || w.creepAt(b.x, b.y) < 0.5) continue;
+      b.hp = Math.min(b.maxHp, b.hp + b.maxHp * B.structRegen * 0.5);
+    }
     let n = 0;
     for (const u of c.units) if (u.team === AXIOM) n++;
     A.units = n;
@@ -117,6 +137,8 @@ export function updateAxiom(w: World, c: TickCache): void {
   // ---------------------------------------------------------------- expansion
   if (T.expand) {
     A.expandT -= DT;
+    // lost every Fabricator: re-plan production soon
+    if (w.tick % 20 === 11 && A.expandT > 10 && !c.axiomBuildings.some((b) => b.kind === 'fabricator')) A.expandT = 10;
     if (A.expandT <= 0) {
       A.expandT = 55 / Math.sqrt(D.compute) + w.rng.next() * 20;
       expand(w, c);
@@ -182,7 +204,7 @@ function nearestHome(c: TickCache, x: number, y: number): Entity | null {
 function humanHQ(w: World, c: TickCache): Entity | null {
   let best: Entity | null = null;
   for (const b of c.humanBuildings) if (b.kind === 'hq' && (!best || b.maxHp > best.maxHp)) best = b;
-  return best ?? c.humanBuildings[0] ?? null;
+  return best ?? c.humanBuildings.find((b) => b.kind !== 'server_farm') ?? null;
 }
 
 function sendToField(w: World, u: Entity): void {
@@ -242,12 +264,14 @@ function produceGarrisons(w: World, c: TickCache): void {
   const counts = new Map<number, number>();
   for (const u of c.units) if (u.team === AXIOM && u.homeId && u.order?.type === 'guard') counts.set(u.homeId, (counts.get(u.homeId) ?? 0) + 1);
   const cap = B.garrisonBase + A.threat * B.garrisonPerThreat;
+  // save up for a new Fabricator when AXIOM wants more production
+  const reserve = fabCount(c) < wantedFabs(A.threat) ? B.fabCost : 0;
   for (const b of c.axiomBuildings) {
     if (!b.built || (b.kind !== 'fabricator' && b.kind !== 'core') || b.stunUntil > w.time) continue;
     if ((counts.get(b.id) ?? 0) >= cap) continue;
     const kind = pickRobot(w, c, 'garrison');
     const cost = UNITS[kind].compute ?? 10;
-    if (A.compute < cost) continue;
+    if (A.compute - reserve < cost) continue;
     // production speed scales with threat
     if (w.rng.next() > 0.35 + A.threat * 0.06) continue;
     A.compute -= cost;
@@ -263,19 +287,22 @@ function defend(w: World, c: TickCache): void {
     const attacker = w.get(b.attackerId);
     const ax = attacker ? attacker.x : b.x, ay = attacker ? attacker.y : b.y;
     let sent = 0;
+    // the Core calls every garrison on the map home; other structures only nearby guards
+    const isCore = b.kind === 'core';
+    const pull = isCore ? Infinity : 20, maxSent = isCore ? 80 : 24;
     for (const u of c.units) {
       if (u.team !== AXIOM || u.order?.type !== 'guard') continue;
-      if (Math.hypot(u.x - b.x, u.y - b.y) > 20) continue;
+      if (Math.hypot(u.x - b.x, u.y - b.y) > pull) continue;
       setOrder(u, { type: 'amove', x: ax + (w.rng.next() - 0.5) * 2, y: ay + (w.rng.next() - 0.5) * 2 });
       u.queue.push({ type: 'guard', x: b.x, y: b.y + b.size / 2 + 2 });
-      if (++sent > 24) break;
+      if (++sent > maxSent) break;
     }
     // emergency production: a key structure under attack spends banked Compute — and if need be the
     // next Surge's budget — on defenders (attacking AXIOM's base makes the next Surge smaller)
     if (!b.built || (b.kind !== 'fabricator' && b.kind !== 'core' && b.kind !== 'vault')) continue;
     const home = b.kind === 'vault' ? nearestHome(c, b.x, b.y) : b;
     if (!home || home.stunUntil > w.time) continue;
-    const n = B.emergencyBase + Math.floor(A.threat / B.emergencyThreatDiv);
+    const n = (B.emergencyBase + Math.floor(A.threat / B.emergencyThreatDiv)) * (isCore ? B.emergencyCoreMul : 1);
     for (let i = 0; i < n; i++) {
       const kind = pickRobot(w, c, 'garrison');
       const cost = UNITS[kind].compute ?? 10;
@@ -295,16 +322,19 @@ function expand(w: World, c: TickCache): void {
   const relays = c.axiomBuildings.filter((b) => b.kind === 'relay').length;
   const fabs = c.axiomBuildings.filter((b) => b.kind === 'fabricator').length;
   let kind = 'relay';
-  // rebuild production first: always when none is left, otherwise once the Grid has some reach
-  if (fabs === 0 && A.compute >= 260) kind = 'fabricator';
-  else if (fabs < 1 + Math.floor(A.threat / 2) && relays >= 2 && A.compute >= 260 && w.rng.next() < 0.5) kind = 'fabricator';
+  // with no production left AXIOM will raid the next Surge's budget to rebuild a Fabricator
+  const desperate = fabs === 0 && A.compute + A.surgePool >= B.fabCost;
+  // production first: rebuild / add Fabricators (in the heartland) as the threat grows
+  if (desperate || (fabs < wantedFabs(A.threat) && A.compute >= B.fabCost && relays >= 1)) kind = 'fabricator';
   else if (A.threat >= 3 && w.rng.next() < 0.3 && A.compute >= 90) kind = 'lancet';
   else if (relays >= 4 + A.threat * 2) return;
-  const cost = kind === 'fabricator' ? 260 : kind === 'lancet' ? 90 : 60;
-  if (A.compute < cost) return;
+  const cost = kind === 'fabricator' ? B.fabCost : kind === 'lancet' ? 90 : 60;
+  if (A.compute < cost && !(kind === 'fabricator' && desperate)) return;
   const spot = kind === 'fabricator' ? findInterior(w, c, BUILDINGS[kind].size) ?? findFrontier(w, c, BUILDINGS[kind].size, false) : findFrontier(w, c, BUILDINGS[kind].size, kind === 'lancet');
   if (!spot) return;
-  A.compute -= cost;
+  const fromBank = Math.min(A.compute, cost);
+  A.compute -= fromBank;
+  A.surgePool -= cost - fromBank;
   const b = w.spawnBuilding(kind, AXIOM, spot.x, spot.y, false);
   w.emit({ t: 'axiom_expand', kind, x: b.x, y: b.y });
   if (w.isVisible(b.x, b.y)) w.alert(`AXIOM is constructing a ${BUILDINGS[kind].name}`, b.x, b.y, 'warn');
@@ -371,6 +401,16 @@ function findInterior(w: World, c: TickCache, size: number): Pt | null {
   return best;
 }
 
+function fabCount(c: TickCache): number {
+  let n = 0;
+  for (const b of c.axiomBuildings) if (b.kind === 'fabricator') n++;
+  return n;
+}
+
+function wantedFabs(threat: number): number {
+  return B.fabsBase + Math.floor(threat / B.fabsThreatDiv);
+}
+
 function areaFree(w: World, x: number, y: number, size: number): boolean {
   for (let yy = y - 1; yy <= y + size; yy++) for (let xx = x - 1; xx <= x + size; xx++) {
     if (!w.inBounds(xx, yy)) return false;
@@ -403,7 +443,7 @@ function raid(w: World, c: TickCache): void {
   // most exposed structure: far from HQ, few defenders
   let target: Entity | null = null, best = -Infinity;
   for (const b of c.humanBuildings) {
-    if (b.bdef!.wall) continue;
+    if (b.bdef!.wall || b.kind === 'server_farm') continue;
     const d = Math.hypot(b.x - hq.x, b.y - hq.y);
     const s = d + w.rng.next() * 8 - (b.bdef!.weapon ? 6 : 0);
     if (s > best) { best = s; target = b; }
@@ -439,6 +479,12 @@ function raid(w: World, c: TickCache): void {
 function launchSurge(w: World, c: TickCache): void {
   const A = w.axiom;
   const D = DIFF[w.settings.difficulty];
+  // the previous wave is still around (stragglers / a long siege) but the base outlived it
+  // (counted, but no 'surge_end' event: the HUD would flash SURGE REPELLED right before the next siren)
+  if (A.surgeActive) {
+    w.human.stats.surgesSurvived++;
+    for (const u of c.units) if (u.team === AXIOM && u.squad === A.surgeN) u.squad = 0;
+  }
   A.surgeN++;
   const n = A.surgeN;
   const cascade = n % 4 === 0;
@@ -480,6 +526,7 @@ function launchSurge(w: World, c: TickCache): void {
   }
   w.flags.surgeSize = spawned;
   A.surgeActive = true;
+  w.flags.surgeAt = w.time;
   w.emit({ t: 'surge_start', n, cascade, count: spawned, sfx: 'surge_siren' });
   w.alert(cascade ? `CASCADE ${n} — ${spawned} machines and a Colossus are coming!` : `SURGE ${n} — ${spawned} machines inbound!`, tx, ty, 'danger');
 }
@@ -487,8 +534,16 @@ function launchSurge(w: World, c: TickCache): void {
 function trackSurge(w: World, c: TickCache): void {
   const A = w.axiom;
   if (!A.surgeActive || w.tick % 20 !== 0) return;
+  // after a while, robots of this wave that are nowhere near the base (lost / wandering / raiding
+  // elsewhere) no longer keep the Surge "active"
+  const late = w.time - ((w.flags.surgeAt as number) ?? w.time) > 90;
+  const hq = late ? humanHQ(w, c) : null;
   let alive = 0;
-  for (const u of c.units) if (u.team === AXIOM && u.squad === A.surgeN) alive++;
+  for (const u of c.units) {
+    if (u.team !== AXIOM || u.squad !== A.surgeN) continue;
+    if (hq && Math.hypot(u.x - hq.x, u.y - hq.y) > 30) continue;
+    alive++;
+  }
   const size = (w.flags.surgeSize as number) || 1;
   if (alive <= Math.max(2, size * 0.1)) {
     A.surgeActive = false;

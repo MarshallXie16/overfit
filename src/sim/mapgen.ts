@@ -233,6 +233,7 @@ export function generateWorld(settings: GameSettings, opts: MapGenOptions = {}):
   const ensure = (p: Pt) => carveTo(w, rng, Math.floor(p.x), Math.floor(p.y), Math.floor(ps.x), Math.floor(ps.y));
   for (const p of [as, ...fabSites, ...relaySites, ...vaultSites, ...farmSites, ...scrapSites, ...extraSites]) ensure(p);
   w.rebuildWalk();
+  fillPockets(w, Math.floor(ps.x), Math.floor(ps.y));
 
   // ---------------------------------------------------------------- human start
   const D = DIFF[settings.difficulty];
@@ -268,7 +269,7 @@ export function generateWorld(settings: GameSettings, opts: MapGenOptions = {}):
       const x = Math.floor(p.x + Math.cos(a) * r), y = Math.floor(p.y + Math.sin(a) * r);
       if (!w.isWalkableTile(x, y)) continue;
       if (w.entities.some((e) => e.cat === 'resource' && (e.x | 0) === x && (e.y | 0) === y)) continue;
-      w.spawnResource('scrap', x + 0.5, y + 0.5, near ? rng.int(500, 700) : rng.int(400, 650), rng.int(0, 3));
+      w.spawnResource('scrap', x + 0.5, y + 0.5, near ? rng.int(500, 700) : rng.int(550, 850), rng.int(0, 3));
       j++;
     }
   }
@@ -327,6 +328,36 @@ function areaOk(w: World, x: number, y: number, s: number): boolean {
   }
   for (const e of w.entities) if (e.cat === 'resource' && e.x >= x && e.x < x + s && e.y >= y && e.y < y + s) return false;
   return true;
+}
+
+/**
+ * Turn walkable tiles that are not 4-connected to the player start into ruins. Paths never cut
+ * corners, so a pocket joined only diagonally is unreachable; units spawned or shoved into one
+ * would be stuck forever.
+ */
+function fillPockets(w: World, sx: number, sy: number): void {
+  const N = w.w;
+  const walk = w.grid.walk;
+  const seen = new Uint8Array(N * w.h);
+  const start = sy * N + sx;
+  if (walk[start] === WALK_BLOCKED) return;
+  const q = [start];
+  seen[start] = 1;
+  while (q.length) {
+    const i = q.pop()!;
+    const x = i % N, y = (i / N) | 0;
+    if (x > 0 && !seen[i - 1] && walk[i - 1] !== WALK_BLOCKED) { seen[i - 1] = 1; q.push(i - 1); }
+    if (x < N - 1 && !seen[i + 1] && walk[i + 1] !== WALK_BLOCKED) { seen[i + 1] = 1; q.push(i + 1); }
+    if (y > 0 && !seen[i - N] && walk[i - N] !== WALK_BLOCKED) { seen[i - N] = 1; q.push(i - N); }
+    if (y < w.h - 1 && !seen[i + N] && walk[i + N] !== WALK_BLOCKED) { seen[i + N] = 1; q.push(i + N); }
+  }
+  let changed = false;
+  for (let i = 0; i < N * w.h; i++) {
+    if (seen[i] || walk[i] === WALK_BLOCKED) continue;
+    w.terrain[i] = T_RUIN;
+    changed = true;
+  }
+  if (changed) w.rebuildWalk();
 }
 
 /** Ensure (sx,sy) connects to (gx,gy) by carving rubble through blocked tiles. */

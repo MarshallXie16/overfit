@@ -270,11 +270,11 @@ export const BUILDINGS: Record<string, BuildingDef> = {
 
   // ------------------------------------------------------------- AXIOM
   core: {
-    kind: 'core', name: 'AXIOM Core', side: 'axiom', size: 5, hp: 12000, cost: { scrap: 0 }, power: 0, sight: 10, buildTime: 1,
+    kind: 'core', name: 'AXIOM Core', side: 'axiom', size: 5, hp: 25000, cost: { scrap: 0 }, power: 0, sight: 10, buildTime: 1,
     weapon: W.core, creepRadius: 11, compute: 0.4, dataValue: 0, desc: 'The heart of AXIOM. Destroy it to end the war.',
   },
   fabricator: {
-    kind: 'fabricator', name: 'Fabricator', side: 'axiom', size: 3, hp: 2400, cost: { scrap: 0 }, power: 0, sight: 7, buildTime: 30,
+    kind: 'fabricator', name: 'Fabricator', side: 'axiom', size: 3, hp: 3600, cost: { scrap: 0 }, power: 0, sight: 7, buildTime: 30,
     creepRadius: 7, compute: 0.25, dataValue: 80, desc: 'Produces robots.',
   },
   relay: {
@@ -309,7 +309,7 @@ export const RESEARCH: Record<string, ResearchDef> = {
   armor1: { id: 'armor1', name: 'Composite Armor', cost: { scrap: 150, data: 40 }, time: 40, hotkey: 'A', desc: '+15% HP for all units.' },
   armor2: { id: 'armor2', name: 'Reactive Plating', cost: { scrap: 250, data: 90 }, time: 55, requires: ['armor1'], hotkey: 'A', desc: '+15% HP for all units.' },
   salvage: { id: 'salvage', name: 'Salvage Protocols', cost: { scrap: 75, data: 25 }, time: 30, hotkey: 'S', desc: '+30% harvest speed. Wrecks yield +50% scrap.' },
-  bandwidth: { id: 'bandwidth', name: 'Expanded Bandwidth', cost: { scrap: 120, data: 50 }, time: 40, hotkey: 'D', desc: 'Netrunners control 5 robots and hack 1 s faster.' },
+  bandwidth: { id: 'bandwidth', name: 'Expanded Bandwidth', cost: { scrap: 120, data: 50 }, time: 40, hotkey: 'D', desc: 'Netrunners control 5 robots and hack 40% faster.' },
   proto_emp: { id: 'proto_emp', name: 'Protocol: EMP Burst', cost: { scrap: 100, data: 40 }, time: 30, hotkey: 'Z', desc: 'Unlocks EMP Burst: stun robots in an area.' },
   proto_orbital: { id: 'proto_orbital', name: 'Protocol: Orbital Strike', cost: { scrap: 200, data: 80 }, time: 45, hotkey: 'X', desc: 'Unlocks Orbital Strike.' },
   proto_override: { id: 'proto_override', name: 'Protocol: Override', cost: { scrap: 200, data: 100 }, time: 50, requires: ['bandwidth'], hotkey: 'C', desc: 'Unlocks Override: mass-hack robots for 60 s.' },

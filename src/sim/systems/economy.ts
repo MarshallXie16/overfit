@@ -152,13 +152,28 @@ function spawnFromBuilding(w: World, b: Entity, kind: string): void {
       const node = w.entities.find((r) => r.alive && (r.cat === 'resource' || r.cat === 'wreck') && Math.hypot(r.x - target.x, r.y - target.y) < 1.2);
       if (node) { setOrder(u, { type: 'harvest', id: node.id }); return; }
     }
-    setOrder(u, def.weapon ? { type: 'amove', x: target.x, y: target.y } : { type: 'move', x: target.x, y: target.y });
+    // spread arrivals around the rally point (golden-angle spiral) so units don't pile onto one spot
+    let rx2 = target.x, ry2 = target.y;
+    for (let j = 0; j < 24; j++) {
+      const k = (u.id + j) % 24;
+      if (k === 0) continue;
+      const a = k * 2.39996, r = 0.65 * Math.sqrt(k);
+      const sx = target.x + Math.cos(a) * r, sy = target.y + Math.sin(a) * r;
+      if (roomy(w, Math.floor(sx), Math.floor(sy))) { rx2 = sx; ry2 = sy; break; }
+    }
+    setOrder(u, def.weapon ? { type: 'amove', x: rx2, y: ry2 } : { type: 'move', x: rx2, y: ry2 });
   } else if (def.abilities?.includes('harvest')) {
     // engineers auto-harvest by default
     autoHarvestSoon(w, u);
   } else {
     setOrder(u, { type: 'move', x: ex + dx / d * 1.5, y: ey + dy / d * 1.5 });
   }
+}
+
+/** Tile and its 8 neighbours are walkable (a spot that doesn't plug a corridor). */
+function roomy(w: World, tx: number, ty: number): boolean {
+  for (let y = ty - 1; y <= ty + 1; y++) for (let x = tx - 1; x <= tx + 1; x++) if (!w.isWalkableTile(x, y)) return false;
+  return true;
 }
 
 function autoHarvestSoon(w: World, u: Entity): void {
@@ -191,7 +206,7 @@ export function completeResearch(w: World, id: string): void {
       break;
     }
     case 'salvage': H.harvestMul = 1.3; H.wreckMul = 1.5; break;
-    case 'bandwidth': H.bandwidth = 5; H.hackTime = 1.5; break;
+    case 'bandwidth': H.bandwidth = 5; H.hackTime = 1.1; break;
   }
   w.emit({ t: 'research_done', id, name: RESEARCH[id]?.name, sfx: 'research_done' });
 }

@@ -11,7 +11,10 @@ export { turnToward };
 export const ECON = { carry: 10, gather: 1.6 };
 export const CARRY_CAP = ECON.carry;
 export const GATHER_TIME = ECON.gather;
+/** A* searches per tick; units starved for > PATH_STARVE ticks may exceed it up to PATH_HARD_CAP. */
 const PATH_BUDGET = 14;
+const PATH_STARVE = 6;
+const PATH_HARD_CAP = 40;
 let pathsThisTick = 0;
 
 export function updateUnits(w: World, c: TickCache): void {
@@ -29,6 +32,7 @@ export function updateUnits(w: World, c: TickCache): void {
 export function nextOrder(e: Entity): void {
   e.order = e.queue.shift() ?? null;
   e.loiterAt = 0;
+  e.flowBest = Infinity; e.flowT = 0;
   e.path = null;
   e.targetId = 0;
   e.stuckT = 0;
@@ -42,6 +46,7 @@ export function setOrder(e: Entity, o: Entity['order'], queue = false): void {
   e.queue.length = 0;
   e.order = o;
   e.loiterAt = 0;
+  e.flowBest = Infinity; e.flowT = 0;
   e.path = null;
   e.targetId = 0;
   e.stuckT = 0;
@@ -82,6 +87,13 @@ export function moveTo(w: World, e: Entity, gx: number, gy: number, arrive = 0.3
   const dx = gx - e.x, dy = gy - e.y;
   const dist = Math.hypot(dx, dy);
   if (dist <= arrive) { e.path = null; e.stuckT = 0; return true; }
+  // crowded out of a formation slot / pocket: once close, give up after 3 s without real progress
+  // (the per-waypoint stuck timer below is reset by every repath, so it can't catch jostling)
+  if (Math.abs(gx - e.nearGX) + Math.abs(gy - e.nearGY) > 0.75) { e.nearGX = gx; e.nearGY = gy; e.nearBest = Infinity; e.nearT = 0; }
+  if (dist < 2.5 + e.radius) {
+    if (dist < e.nearBest - 0.1) { e.nearBest = dist; e.nearT = 0; }
+    else if ((e.nearT += DT) > 3) { e.path = null; e.stuckT = 0; e.nearT = 0; e.nearBest = Infinity; return true; }
+  }
   if (e.flying) {
     setVel(w, e, dx / dist, dy / dist, dist < 1 ? Math.max(0.3, dist) : 1);
     return false;
@@ -92,16 +104,19 @@ export function moveTo(w: World, e: Entity, gx: number, gy: number, arrive = 0.3
       e.path = [{ x: gx, y: gy }];
       e.pathI = 0; e.pathGX = gx; e.pathGY = gy;
       e.repathAt = w.time + 1.5;
-      e.lastDist = Infinity;
-    } else if (pathsThisTick < PATH_BUDGET) {
+      e.lastDist = goalMoved ? Infinity : -1;
+    } else if (pathsThisTick < PATH_BUDGET || (e.pathDenied >= PATH_STARVE && pathsThisTick < PATH_HARD_CAP)) {
       pathsThisTick++;
+      e.pathDenied = 0;
       const p = findPath(w.grid, e.x, e.y, gx, gy, { maxExpand: 6000, radius: Math.min(0.45, e.radius) });
       if (p && p.length === 0) { e.path = null; e.stuckT = 0; return true; }
       e.path = p && p.length ? p : [{ x: gx, y: gy }];
       e.pathI = 0; e.pathGX = gx; e.pathGY = gy;
       e.repathAt = w.time + 5 + w.rng.next() * 2;
-      e.lastDist = Infinity;
+      e.lastDist = goalMoved ? Infinity : -1;
     } else if (!e.path) {
+      // out of path budget this tick: head straight for the goal and get priority soon
+      e.pathDenied++;
       setVel(w, e, dx / dist, dy / dist);
       return false;
     }
@@ -118,11 +133,14 @@ export function moveTo(w: World, e: Entity, gx: number, gy: number, arrive = 0.3
   const wd = Math.hypot(wx, wy);
   const last = e.pathI === path.length - 1;
   if (last && wd < Math.min(0.3, Math.max(0.05, arrive))) { e.path = null; e.stuckT = 0; return true; }
-  // stuck detection
-  if (wd < e.lastDist - 0.03) { e.lastDist = wd; e.stuckT = 0; }
+  // stuck detection (lastDist -1 = re-baseline after a repath without forgiving the stuck time)
+  if (e.lastDist < 0) e.lastDist = wd;
+  else if (wd < e.lastDist - 0.03) { e.lastDist = wd; e.stuckT = 0; }
   else {
     e.stuckT += DT;
     if (e.stuckT > 1.2 && w.time >= e.repathAt - 4) e.repathAt = w.time; // force repath soon
+    // probably wedged behind friends parked in a 1-tile gap: slip past them for a moment
+    if (e.stuckT > 1.6 && e.ghostUntil < w.time - 1) e.ghostUntil = w.time + 1.5;
     if (e.stuckT > 2.0 && dist < 1.2 + Math.sqrt(e.radius * 8)) { e.path = null; e.stuckT = 0; return true; }
     if (e.stuckT > 7) { e.path = null; e.stuckT = 0; return true; }
   }
@@ -226,6 +244,9 @@ function tryAcquire(w: World, c: TickCache, e: Entity, range = acquireRange(e)):
     range,
     antiAir: !wpn.melee && wpn.antiAir !== false,
     preferBuildings: e.kind === 'sapper',
+    // robots marching on the base walk around wall lines; a wall that actually blocks the
+    // flow is attacked by flow() itself. Sappers are the wall breakers.
+    skipWalls: e.order?.type === 'flow' && e.kind !== 'sapper',
   });
   e.targetId = t ? t.id : 0;
   return t;
@@ -284,6 +305,9 @@ function idle(w: World, c: TickCache, e: Entity): void {
     const t = tryAcquire(w, c, e);
     if (t && fromAnchor < leash) { engage(w, c, e, t); return; }
     if (t && engage(w, c, e, t, false)) return;
+    // shoved a little by friends squeezing past: accept the new spot instead of shoving back
+    // (otherwise idle units plug corridors); only walk back after chasing something
+    if (fromAnchor > 0.8 && fromAnchor < 2.5 && w.time - e.firedAt > 3) { e.ax = e.x; e.ay = e.y; return; }
     if (fromAnchor > 0.8) { moveTo(w, e, e.ax, e.ay, 0.5); return; }
     return;
   }
@@ -315,7 +339,12 @@ function guard(w: World, c: TickCache, e: Entity, o: { x: number; y: number }): 
 
 function flow(w: World, c: TickCache, e: Entity, o: { field: string; tx: number; ty: number }): void {
   const t = tryAcquire(w, c, e);
-  if (t && engage(w, c, e, t)) return;
+  // chase units; structures are only engaged once in reach — the field already leads to them, and
+  // pathing to a building seen across ruins makes units yo-yo at the edge of acquisition range
+  if (t) {
+    if (t.isUnit || e.flying) { if (engage(w, c, e, t)) return; }
+    else if (e.udef?.weapon && surfaceDist(e.x, e.y, t) <= reachOf(e, e.udef.weapon)) { engage(w, c, e, t, false); return; }
+  }
   if (e.flying) {
     // flyers ignore flow fields: head for the raid target, else the nearest hostile structure
     if (w.time >= e.loiterAt) {
@@ -326,6 +355,7 @@ function flow(w: World, c: TickCache, e: Entity, o: { field: string; tx: number;
       else {
         let bd = Infinity;
         for (const b of e.team === AXIOM ? c.humanBuildings : c.axiomBuildings) {
+          if (b.bdef?.wall || b.kind === 'server_farm') continue;
           const d = Math.hypot(b.x - e.x, b.y - e.y);
           if (d < bd) { bd = d; tx = b.x; ty = b.y; }
         }
@@ -359,10 +389,32 @@ function flow(w: World, c: TickCache, e: Entity, o: { field: string; tx: number;
       const b = w.get(occ);
       if (b && b.team !== e.team && b.team !== 0) {
         if (engage(w, c, e, b)) return;
+        // unarmed support (Warden): wait behind the wall instead of grinding into it
+        if (!e.udef?.weapon) return;
       }
     }
   }
-  setVel(w, e, s.dx, s.dy);
+  // next to walls / buildings: aim at the centre of the next tile instead of following the smooth
+  // gradient, so units ride the middle of corridors rather than snagging on corners
+  let mx = s.dx, my = s.dy;
+  const ctx = Math.floor(e.x), cty = Math.floor(e.y);
+  if (nearBlocked(w, ctx, cty)) {
+    const n = f.next[cty * w.w + ctx];
+    if (n >= 0) {
+      const vx = (n % w.w) + 0.5 - e.x, vy = ((n / w.w) | 0) + 0.5 - e.y, d = Math.hypot(vx, vy);
+      if (d > 0.05) { mx = vx / d; my = vy / d; }
+    }
+  }
+  // jam watchdog: no progress along the field for 2.5 s (head-on in a 1-tile junction) → slip
+  // past friendly units for a moment
+  if (s.dist < e.flowBest - 0.3) { e.flowBest = s.dist; e.flowT = 0; }
+  else if ((e.flowT += DT) > 2.5) { e.ghostUntil = w.time + 1.2; e.flowT = 0; e.flowBest = s.dist; }
+  setVel(w, e, mx, my);
+}
+
+function nearBlocked(w: World, tx: number, ty: number): boolean {
+  for (let y = ty - 1; y <= ty + 1; y++) for (let x = tx - 1; x <= tx + 1; x++) if (!w.isWalkableTile(x, y)) return true;
+  return false;
 }
 
 function adjacentHostileStructure(w: World, e: Entity): Entity | null {
@@ -509,6 +561,8 @@ function hack(w: World, c: TickCache, e: Entity, id: number): void {
     w.emit({ t: 'alert', msg: 'Netrunner bandwidth full', x: e.x, y: e.y, level: 'warn', sound: 'ui_error' });
     return nextOrder(e);
   }
+  // friendly units hold fire on a robot our Netrunner is going for (see acquire())
+  if (hackEligible(w, t)) t.hackChannelUntil = w.time + 0.25;
   const d = surfaceDist(e.x, e.y, t);
   if (d > 5) { e.hackT = 0; moveNear(w, e, t); return; }
   e.angle = turnToward(e.angle, Math.atan2(t.y - e.y, t.x - e.x), 10 * DT);
@@ -523,6 +577,7 @@ function hack(w: World, c: TickCache, e: Entity, id: number): void {
     e.hackT = 0;
     w.emit({ t: 'hack_start', x: t.x, y: t.y, id: t.id, from: e.id });
   }
+  t.hackChannelUntil = w.time + 0.25;
   e.hackT += DT;
   const need = w.human.hackTime * (t.isBuilding ? 2 : 1);
   if (e.hackT >= need) {

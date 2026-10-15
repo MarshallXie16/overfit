@@ -34,22 +34,24 @@ Scavenge scrap → build power/pop/production → train army & turrets → survi
 
 AXIOM is a real opponent with a base, an economy and territory — not just a wave spawner.
 
-- **Compute** (AXIOM's economy): base income + per Grid tile + per Server Farm held + per structure. Displayed to player with growth rate.
+- **Compute** (AXIOM's economy): (base 0.4/s + per structure + 0.3/s per Server Farm held + per Grid tile) × a time ramp `1 + (t/300 s)^1.15` (≈ ×2.7 at 8 min, ×5.4 at 20 min, ×8.4 at 30 min). Half of it is banked for the next Surge, half funds the home base (garrisons, expansion, raids, emergency defence). Displayed to player with growth rate.
 - **Threat Level 1–10**: rises with time and Compute. Unlocks new robot types and larger Surges.
 - **Grid (creep)**: spreads organically tile-by-tile from Core/Relays/Fabricators. Robots on Grid: +25% speed, regen 2% HP/s. Humans cannot build on Grid. When a source dies, its Grid decays from the edges.
 - **Structures**:
-  - **Core** — the final target. Huge HP, spawns units, emits Grid. Destroy = victory.
-  - **Fabricator** — produces robots; robots rally near it as a garrison.
+  - **Core** — the final target. 25 000 HP, spawns units, emits Grid. Destroy = victory. When attacked it calls every garrison on the map home.
+  - **Fabricator** — 3 600 HP. Produces robots; robots rally near it as a garrison (cap 8 + 4×Threat per Fabricator/Core). AXIOM wants 2 + Threat/3 Fabricators and saves Compute to build new ones deep inside its Grid; if every Fabricator falls it rebuilds one immediately, raiding the next Surge's budget if it must.
   - **Relay** — cheap Grid emitter; AXIOM builds new Relays at its frontier, extending toward the player and Server Farms (the swarm literally grows across the map).
   - **Data Vault** — stores AXIOM's learned model. Destroying one triggers **Catastrophic Forgetting** (all adaptations reduced by half) + big Data reward.
   - **Lancet** — defensive turret (Energy beam). Hackable.
+  - All AXIOM structures on the Grid **self-repair** 0.4% max HP/s once they have not been hit for 10 s — a half-finished assault does not stick.
 - **Neutral Server Farms** (3×3): capturable by having units near it with no enemies near. Holder gains income (Data for humans, Compute for AXIOM). AXIOM tries to grab them by extending Grid.
 
 ### 5.1 Behaviour layers
 1. **Economy** — accrue Compute; spend on robots (queued at Fabricators) and expansion (Relays at the Grid frontier; occasional new Fabricator).
-2. **Garrison** — idle robots loiter near their Fabricator; respond when an AXIOM structure is attacked.
+2. **Garrison** — idle robots loiter near their Fabricator; respond when an AXIOM structure is attacked. A Fabricator, Vault or the Core under attack also triggers **emergency production**: it spends banked Compute (and, if that runs dry, the next Surge's budget) on defenders — 2 + Threat/4 robots per second, doubled at the Core. Hitting AXIOM's base therefore also shrinks the next Surge.
 3. **Raids** — small squads periodically hit exposed human structures (outlying buildings, harvesting Engineers).
-4. **Surges** — a visible countdown ("SURGE IN 2:30"). All Fabricators release a wave that converges on the human base along a flow field. Size scales with Compute & Threat. Every 4th Surge is a **Cascade** with a **Colossus** boss.
+4. **Surges** — a visible countdown ("SURGE IN 2:30"). All Fabricators release a wave that converges on the human base along a flow field. Size scales with Compute & Threat. The first Surges are damped while AXIOM is "still learning" (budget ×0.45, ×0.6, ×0.75, ×0.9, then full; only a quarter of the garrison joins Surges 1–2), so **Surge 1 on Veteran is ≈ 20–25 small robots**. Interval 150 s, −4 s per Surge (min 95 s). Every 4th Surge is a **Cascade** with a **Colossus** boss.
+   Robots flow toward the human base's real structures. **Walls are not destinations**: robots walk around short wall lines and only chew through a wall when that is cheaper than the detour (a fully enclosed base gets breached at its weakest point). Sappers are the exception — they go for walls.
 5. **Overfit adaptation** — see §6.
 
 ## 6. Damage & the Overfit system
@@ -80,7 +82,7 @@ Armor classes: **Light**, **Armored**, **Structure**.
 
 ## 7. Hacking
 
-- **Netrunner** channels a hack on a robot within 5 tiles. Requirements: target is not a boss/structure (Lancets excepted), and target is **below 50% HP or stunned**. Channel 2.5 s (interrupted if Netrunner moves/dies or target leaves range).
+- **Netrunner** channels a hack on a robot within 5 tiles. Requirements: target is not a boss/structure (Lancets excepted), and target is **below 50% HP or stunned**. Channel 1.8 s (interrupted if Netrunner moves/dies or target leaves range).
 - Success: robot converts to the human side (teal tint, keeps its stats, heals 25%). Each Netrunner supports **bandwidth 3** hacked units (research → 5). Hacked units don't use pop.
 - **If the Netrunner dies, its linked units revert to AXIOM.** Protect your hackers.
 - Lancets (AXIOM turrets) can be hacked (5 s channel).
@@ -92,7 +94,7 @@ All costs in Scrap unless noted (D = Data). Speeds in tiles/s, range in tiles.
 
 | Unit | From | Cost | Pop | HP | Armor | Weapon | Notes |
 |---|---|---|---|---|---|---|---|
-| Engineer | HQ | 50 | 1 | 60 | Light | — | harvest 6 scrap/trip, build, repair |
+| Engineer | HQ | 50 | 1 | 60 | Light | — | harvest 10 scrap/trip (1.6 s to gather; wrecks ×1.5 faster), build, repair |
 | Rifleman | Barracks | 60 | 1 | 90 | Light | Kinetic 8 / 0.8 s, r 5.5 | cheap line infantry |
 | Arc Trooper | Barracks | 90 | 1 | 85 | Light | Energy 11 / 1.2 s, r 4, chains 2 | anti-swarm |
 | Rocketeer | Barracks | 100 | 1 | 80 | Light | Explosive 34 / 2.4 s, r 6.5, splash 0.9 | anti-armor |
@@ -113,7 +115,7 @@ All costs in Scrap unless noted (D = Data). Speeds in tiles/s, range in tiles.
 | Barracks | 3×3 | 150 | −3 | 1000 | infantry |
 | Factory | 3×3 | 250 | −5 | 1400 | vehicles (requires Barracks) |
 | Lab | 3×3 | 200 | −4 | 900 | research; unlocks tier-2 |
-| Wall | 1×1 | 10 | 0 | 450 | drag to build lines |
+| Wall | 1×1 | 10 | 0 | 450 | drag to build lines; robots path around short lines and breach full rings (Sappers target walls) |
 | Gun Turret | 2×2 | 120 | −2 | 600 | Kinetic 9 / 0.45 s, r 7 |
 | Tesla Coil | 2×2 | 160 | −4 | 600 | Energy 22 / 1.4 s, r 5, chains 4 (Lab) |
 | Missile Battery | 2×2 | 180 | −3 | 550 | Explosive 42 / 2.6 s, r 9, splash 1.2 (Lab) |
@@ -139,7 +141,7 @@ Railguns (unlock Ranger), Kinetic Rounds I/II, Capacitor Banks I/II, Shaped Char
 | **Lancer** | 4 | 160 | Light | 2.4 | Energy 20 / 1.6 s r 7 | anti-infantry sniper |
 | **Wasp** | 5 | 90 | Light | 4.0 | Energy 6 / 0.5 s r 4, **flying** | flier, ignores terrain & walls |
 | **Warden** | 6 | 300 | Armored | 2.0 | repairs robots in r 4, 12 HP/s | support |
-| **Colossus** | boss | 6000 | Armored | 1.2 | Explosive 80 splash 2 / 2.5 s r 7 + stomp | Cascade boss; unhackable |
+| **Colossus** | boss | 5000 | Armored | 1.2 | Explosive 55 splash 1.6 / 2.5 s r 7 + stomp | Cascade boss; unhackable |
 
 ## 10. Game modes
 
@@ -152,7 +154,11 @@ Railguns (unlock Ranger), Kinetic Rounds I/II, Capacitor Banks I/II, Shaped Char
 - **Skirmish** — procedural map (seed, size, difficulty); win by destroying the Core.
 - **Endless Swarm** — no Core; survive as many Surges as possible; score. **Daily seed** with a shareable emoji result card.
 
-Difficulty: **Recruit / Veteran / Nightmare** (Compute income ×0.7 / ×1.0 / ×1.4, epoch length 90/75/60 s, surge size ×0.7/1/1.35).
+Difficulty: **Recruit / Veteran / Nightmare** — Surge Compute ×0.7 / ×1.0 / ×1.25 and surge size ×0.7 / ×1 / ×1.2 (so Surges are ≈ ×0.5 / ×1 / ×1.5 of Veteran), first Surge at 4:00 / 3:00 / 2:45, epoch length 90 / 75 / 60 s, starting scrap 500 / 400 / 350. AXIOM's *home* economy (garrisons, expansion, emergency defence) only feels 30% of the Compute multiplier, so its base is a fortress on every difficulty; Recruit Surge intervals are 15% longer.
+
+Skirmish maps: two rich scrap fields flank the HQ, two "natural expansion" fields sit ~22 tiles out on the player's side, the rest are scattered (mostly contested or on AXIOM's half). Pockets of walkable ground that units could never leave are filled in at generation.
+
+Balance targets (scripted bot, levels 1–2, 10 seeds × map sizes 80/96/128 — see `tools/headless.ts`): Recruit — the bot wins most games, typically in 14–18 min; Veteran — 30–50% wins, games 22–26 min on average, ~10 Surges survived, the swarm peaks at 200+ robots; Nightmare — the bot usually loses after surviving ~7–8 Surges.
 
 ## 11. Controls
 

@@ -113,10 +113,17 @@ export function updateFields(w: World, c: TickCache): void {
   let f = w.fields.get('human');
   if (!f) { f = new FlowField(w.w, w.h); w.fields.set('human', f); }
   const goals: number[] = [];
+  // Goals are the human base's real structures. Walls are NOT goals: in 'siege' mode they are
+  // traversable obstacles (SIEGE_COST), so robots walk around short wall lines and only chew
+  // through a wall when it is the cheapest way in. Captured Server Farms can't be damaged:
+  // robots retake them by standing near, not by sieging.
+  let walls = 0;
   for (const b of c.humanBuildings) {
-    if (!b.alive) continue;
+    if (!b.alive || b.kind === 'server_farm') continue;
+    if (b.bdef?.wall) { walls++; continue; }
     for (let y = b.ty; y < b.ty + b.size; y++) for (let x = b.tx; x < b.tx + b.size; x++) goals.push(y * w.w + x);
   }
+  if (goals.length === 0 && walls > 0) for (const b of c.humanBuildings) if (b.alive && b.bdef?.wall) goals.push(b.ty * w.w + b.tx);
   if (goals.length === 0) {
     // no structures: chase the nearest human unit cluster
     for (const u of c.units) if (u.team === HUMAN) goals.push((u.y | 0) * w.w + (u.x | 0));

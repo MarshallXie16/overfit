@@ -1,4 +1,4 @@
-import { BUILDINGS, RESEARCH, UNITS } from './data/defs';
+import { BUILDINGS, PROTOCOLS, RESEARCH, UNITS } from './data/defs';
 import { AXIOM_BAL } from './ai/axiom';
 import { FlowField, WALK_OPEN, WALK_SLOW } from './path';
 import { protocolAvailable } from './systems/economy';
@@ -47,14 +47,14 @@ export const BOT_LEVELS: BotConfig[] = [
     attackValue: 1100, attackRatio: 1.1, strikeShare: 0.85,
   },
   {
-    engineers: 15, thinkEvery: 1, adapt: true, protocols: true, micro: true, walls: true,
-    turretRate: 1, maxTurrets: 10, maxBarracks: 4, maxFactories: 2, maxLabs: 2, maxSites: 2, netrunners: 3,
-    attackValue: 1500, attackRatio: 1.5, strikeShare: 0.8,
+    engineers: 16, thinkEvery: 1, adapt: true, protocols: true, micro: true, walls: true,
+    turretRate: 1, maxTurrets: 10, maxBarracks: 4, maxFactories: 2, maxLabs: 2, maxSites: 3, netrunners: 3,
+    attackValue: 2000, attackRatio: 1.6, strikeShare: 0.8,
   },
   {
     engineers: 18, thinkEvery: 1, adapt: true, protocols: true, micro: true, walls: true,
     turretRate: 1.3, maxTurrets: 14, maxBarracks: 5, maxFactories: 2, maxLabs: 2, maxSites: 3, netrunners: 4,
-    attackValue: 1600, attackRatio: 1.5, strikeShare: 0.8,
+    attackValue: 2200, attackRatio: 1.6, strikeShare: 0.8,
   },
 ];
 
@@ -116,6 +116,9 @@ export class Bot {
   private atkFieldAt = -99;
   private strike = new Set<number>();
   private strikeStart = 0;
+  /** after a failed push, wait for a bigger army before the next one */
+  private minNext = 0;
+  private minNextUntil = 0;
   private scoutId = 0;
   private wallsFor = new Set<number>();
   private farmHold = 0;
@@ -147,7 +150,7 @@ export class Bot {
     this.gathered.push(H.stats.scrapGathered);
     if (this.gathered.length > 31) this.gathered.shift();
     this.income = (H.stats.scrapGathered - this.gathered[0]) / Math.max(1, (this.gathered.length - 1) * this.cfg.thinkEvery);
-    if (!this.clusters) this.clusters = this.buildClusters(w);
+    if (!this.clusters) this.clusters = this.buildClusters();
     if (!this.homeField || w.time - this.homeFieldAt > 20) this.updateFronts(w);
 
     this.engineers(w);
@@ -171,6 +174,18 @@ export class Bot {
     this.targetId = 0;
     this.wallsFor.clear();
     this.gathered = [];
+    this.anchorCache = null;
+    this.anchorAt = -99;
+    this.homeFieldAt = -99;
+    this.atkFieldAt = -99;
+    this.attackAt = 0;
+    this.minNext = 0;
+    this.minNextUntil = 0;
+    this.scoutId = 0;
+    this.farmHold = 0;
+    this.thinks = 0;
+    this.income = 0;
+    this.note = '';
     this.rng = new Rng(((w.settings.seed * 2654435761) ^ (0x5eed + this.level)) >>> 0);
   }
 
@@ -235,7 +250,7 @@ export class Bot {
   }
 
   // ================================================================ map knowledge
-  private buildClusters(w: World): Cluster[] {
+  private buildClusters(): Cluster[] {
     const out: Cluster[] = [];
     for (const r of this.s.resources) {
       if (r.cat !== 'resource') continue;
@@ -245,7 +260,6 @@ export class Bot {
       c.x += (r.x - c.x) / c.ids.length;
       c.y += (r.y - c.y) / c.ids.length;
     }
-    void w;
     return out;
   }
 
@@ -289,8 +303,43 @@ export class Bot {
     return { x: hq.x + (f.x - hq.x) * t * 0.85, y: hq.y + (f.y - hq.y) * t * 0.85 };
   }
 
-  /** Where the home army stands: just behind the turrets that cover the main front. */
+  private anchorCache: Pt | null = null;
+  private anchorAt = -99;
+
+  /** Where the home army stands: just behind the turrets that cover the main front, in open ground. */
   private anchor(): Pt {
+    const w = this.world!;
+    if (this.anchorCache && w.time - this.anchorAt < 10) return this.anchorCache;
+    const p = this.rawAnchor();
+    this.anchorCache = this.openSpot(w, p.x, p.y) ?? p;
+    this.anchorAt = w.time;
+    return this.anchorCache;
+  }
+
+  /** Tile and its 8 neighbours are free ground (not a corridor / doorway). */
+  private roomy(w: World, tx: number, ty: number): boolean {
+    for (let y = ty - 1; y <= ty + 1; y++) for (let x = tx - 1; x <= tx + 1; x++) if (!w.isWalkableTile(x, y)) return false;
+    return true;
+  }
+
+  /** Nearest tile centre whose 5x5 neighbourhood is free ground (room for a blob of units). */
+  private openSpot(w: World, x: number, y: number): Pt | null {
+    const cx = x | 0, cy = y | 0;
+    for (let r = 0; r <= 7; r++) {
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+        const tx = cx + dx, ty = cy + dy;
+        let ok = true;
+        for (let yy = ty - 2; yy <= ty + 2 && ok; yy++) for (let xx = tx - 2; xx <= tx + 2 && ok; xx++) {
+          if (!w.isWalkableTile(xx, yy)) ok = false;
+        }
+        if (ok) return { x: tx + 0.5, y: ty + 0.5 };
+      }
+    }
+    return null;
+  }
+
+  private rawAnchor(): Pt {
     const hq = this.s.hq!;
     const f = this.fronts[0];
     let x = 0, y = 0, k = 0;
@@ -508,7 +557,6 @@ export class Bot {
   // ================================================================ construction
   private construction(w: World): void {
     const s = this.s, H = w.human, A = w.axiom, cfg = this.cfg;
-    const hq = s.hq!;
     const t = w.time;
     const nonWallSites = s.sites.filter((b) => b.kind !== 'wall').length;
     if (s.engineers.length === 0) return;
@@ -540,6 +588,10 @@ export class Bot {
     for (const k of ['barracks', 'factory']) for (const b of s.byKind.get(k) ?? []) if (b.id && b.built && b.prod.length < 2) queuesBusy = false;
     const floating = this.scrap > 300 + this.reserve && queuesBusy;
     const wantProducer = t > 75 && (capacity < income * 0.45 || floating) && nB + nF > 0 && this.count('barracks', true) === nB && this.count('factory', true) === nF;
+    // economy starving (fields near our drop-offs are gone): a new Depot comes first
+    const depot = this.depotPlan(w);
+    const starving = depot && this.income < 6 && t > 240;
+    if (starving) wants.push({ kind: 'depot', save: true, at: () => depot });
     if (nB < 1) wants.push({ kind: 'barracks', save: true });
     if (powerFree < 3 + (nB ? 2 : 0) && this.count('generator') - this.count('generator', true) < 1) wants.push({ kind: 'generator', save: true });
     if (popFree < 2 + producers * 1.5 && H.popCap + pendingPop < 150 && this.count('habitat') - this.count('habitat', true) < 1) wants.push({ kind: 'habitat', save: true });
@@ -550,8 +602,7 @@ export class Bot {
       else if (nB < cfg.maxBarracks) wants.push({ kind: 'barracks', save: false });
       else if (nF < cfg.maxFactories && this.count('lab', true) > 0) wants.push({ kind: 'factory', save: false });
     }
-    const depot = this.depotPlan(w);
-    if (depot) wants.push({ kind: 'depot', save: false, at: () => depot });
+    if (depot && !starving) wants.push({ kind: 'depot', save: false, at: () => depot });
     if (nF < 1 && this.count('lab', true) > 0 && t > 300) wants.push({ kind: 'factory', save: t > 400 });
     if (nL < 2 && cfg.maxLabs >= 2 && this.count('lab', true) > 0 && (t > 600 || this.data > 120) && this.scrap > 300) wants.push({ kind: 'lab', save: false });
 
@@ -580,7 +631,6 @@ export class Bot {
         return;
       }
     }
-    void hq;
   }
 
   private pickTurret(w: World): string {
@@ -725,10 +775,12 @@ export class Bot {
       this.train(w, hq, 'engineer');
     }
     // ---- research
+    const issued = new Set<string>();
     for (const lab of s.byKind.get('lab') ?? []) {
       if (!lab.id || !lab.built || lab.researching) continue;
-      const id = this.nextResearch(w);
+      const id = this.nextResearch(w, issued);
       if (!id) break;
+      issued.add(id);
       const r = RESEARCH[id];
       if (this.scrap >= r.cost.scrap && this.data >= (r.cost.data ?? 0)) {
         w.commands.push({ c: 'research', building: lab.id, id });
@@ -803,7 +855,7 @@ export class Bot {
     return opts[opts.length - 1][0];
   }
 
-  private nextResearch(w: World): string | null {
+  private nextResearch(w: World, skip?: Set<string>): string | null {
     const H = w.human;
     const best = this.bestTypes(w);
     const order: string[] = ['salvage'];
@@ -812,7 +864,7 @@ export class Bot {
     if (this.level === 0) order.push(dmg1[0], 'armor1', 'railguns', dmg1[1], dmg1[2], 'proto_emp');
     else order.push(dmg1[0], 'armor1', 'proto_emp', 'proto_orbital', dmg1[1], dmg2[0], 'railguns', 'bandwidth', dmg1[2], 'armor2', dmg2[1], 'proto_override', dmg2[2]);
     for (const id of order) {
-      if (H.research.has(id)) continue;
+      if (H.research.has(id) || skip?.has(id)) continue;
       const r = RESEARCH[id];
       if (!r || !w.requirementsMet(r.requires)) continue;
       let inProgress = false;
@@ -880,6 +932,16 @@ export class Bot {
           this.amove(w, pick, c.x, c.y, 3);
         }
       }
+      // a boss in the base: everything that can hurt armour focuses it (infantry keeps the escorts busy)
+      const boss = s.threats.find((u) => u.udef?.boss);
+      if (boss) {
+        const focus = home.filter((u) => {
+          const wpn = u.udef?.weapon;
+          return wpn && (wpn.type === 'explosive' || wpn.range >= 6.5 || u.udef!.armor === 'armored') && Math.hypot(u.x - boss.x, u.y - boss.y) < 18;
+        });
+        const ids = focus.filter((u) => u.order?.type !== 'attack' || u.order.id !== boss.id).map((u) => u.id);
+        if (ids.length) w.commands.push({ c: 'order', ids, order: { type: 'attack', id: boss.id } });
+      }
       const big = s.threats.length >= 6 || A.surgeActive;
       if (big && strike.length && this.mode === 'attack') {
         const sc = this.centroid(strike);
@@ -891,9 +953,19 @@ export class Bot {
         if (threatValue > homeValue * 0.8 + 300 || far < 30) this.recall(w, strike, anchor);
       }
     } else {
-      // regroup home units at the anchor; chasers come back
-      const back = home.filter((u) => Math.hypot(u.x - anchor.x, u.y - anchor.y) > 7 && (!u.order || u.order.type === 'amove'));
-      if (back.length) this.amove(w, back, anchor.x, anchor.y, 2);
+      // regroup home units around the anchor (each to its own spot so the blob doesn't pile up)
+      for (const u of home) {
+        if (Math.hypot(u.x - anchor.x, u.y - anchor.y) <= 7 || (u.order && u.order.type !== 'amove')) continue;
+        let px = anchor.x, py = anchor.y;
+        for (let j = 0; j < 29; j++) {
+          const k = (u.id + j) % 29, a = k * 2.39996, r = 0.7 * Math.sqrt(k);
+          const qx = anchor.x + Math.cos(a) * r, qy = anchor.y + Math.sin(a) * r;
+          if (this.roomy(w, qx | 0, qy | 0)) { px = qx; py = qy; break; }
+        }
+        const o = u.order;
+        if (o && o.type === 'amove' && Math.hypot(o.x - px, o.y - py) < 1.5) continue;
+        w.commands.push({ c: 'order', ids: [u.id], order: { type: 'amove', x: px, y: py } });
+      }
     }
 
     // ---------------------------------------------------------- attacks
@@ -905,9 +977,12 @@ export class Bot {
       // AXIOM without Fabricators only spawns at the Core: go for the kill even mid-cycle
       const weak = !s.axStructs.some((b) => b.kind === 'fabricator') && s.axStructs.some((b) => b.kind === 'core');
       const quiet = threatV <= homeValue * (weak ? 0.25 : 0.02);
-      const surgeWindow = !A.tuning.surges || weak || A.surgeT > (this.level === 0 ? 30 : 70) || (A.surgeN === 0 && A.surgeT > 60);
+      // a Cascade (every 4th Surge) is coming: keep the army home for it
+      const cascadeNext = (A.surgeN + 1) % 4 === 0 && A.surgeT < 150 && this.level > 0;
+      const surgeWindow = !A.tuning.surges || weak || (!cascadeNext && (A.surgeT > (this.level === 0 ? 30 : 70) || (A.surgeN === 0 && A.surgeT > 60)));
       if (quiet && surgeWindow && (!A.surgeActive || weak)) {
-        const minV = cfg.attackValue * (weak ? 1 : 1 + 0.12 * (A.threat - 1));
+        let minV = cfg.attackValue * (weak ? 1 : 1 + 0.12 * (A.threat - 1));
+        if (w.time < this.minNextUntil) minV = Math.max(minV, this.minNext);
         this.note = `home ${homeValue | 0}/${minV | 0}`;
         if (homeValue >= minV) {
           const t = this.pickTarget(w, homeValue);
@@ -917,18 +992,6 @@ export class Bot {
         }
       }
     }
-  }
-
-  private threatCenter(w: World): Pt {
-    const hq = this.s.hq!;
-    // nearest threat to the HQ, then centroid of threats around it
-    let n: Entity | null = null, bd = Infinity;
-    for (const u of this.s.threats) { const d = Math.hypot(u.x - hq.x, u.y - hq.y); if (d < bd) { bd = d; n = u; } }
-    if (!n) return { x: hq.x, y: hq.y };
-    let x = 0, y = 0, k = 0;
-    for (const u of this.s.threats) if (Math.hypot(u.x - n.x, u.y - n.y) < 6) { x += u.x; y += u.y; k++; }
-    void w;
-    return { x: x / k, y: y / k };
   }
 
   private centroid(us: Entity[]): Pt {
@@ -958,6 +1021,9 @@ export class Bot {
     let def = 0;
     for (const u of this.s.allRobots) if (Math.abs(u.x - b.x) < 12 && Math.abs(u.y - b.y) < 12) def += this.value(u);
     for (const o of this.s.axStructs) if (o.bdef?.weapon && Math.hypot(o.x - b.x, o.y - b.y) < 9) def += o.kind === 'core' ? 900 : 350;
+    // key structures call in reinforcements while under siege
+    if (b.kind === 'core') def += 1200;
+    else if (b.kind === 'fabricator' || b.kind === 'vault') def += 400;
     return def;
   }
 
@@ -1043,7 +1109,12 @@ export class Bot {
     const distHome = Math.hypot(c.x - hq.x, c.y - hq.y);
     // retreat: too weak, or a surge is about to land and we are far away
     const travel = distHome / 2.3 + 10;
-    if (v < this.strikeStart * 0.35) { this.recall(w, strike); return; }
+    if (v < this.strikeStart * 0.35) {
+      this.minNext = this.strikeStart * 1.3;
+      this.minNextUntil = w.time + 240;
+      this.recall(w, strike);
+      return;
+    }
     if (A.tuning.surges && this.level > 0 && A.surgeT < travel && A.surgeT > 0 && distHome > 20) {
       const home = s.army.filter((u) => !this.strike.has(u.id));
       if (!this.homeCanHold(w, home)) { this.recall(w, strike); return; }
@@ -1106,13 +1177,19 @@ export class Bot {
       for (const id of n.links) if (w.get(id)) live++;
       if (live < H.bandwidth) {
         let best: Entity | null = null, bs = -Infinity;
-        const cnt = w.hash.queryRadius(n.x, n.y, 8, this.hashBuf);
+        // at home the turret line covers the walk to a victim, so look a little further
+        const reach = this.mode === 'attack' ? 7.5 : 9.5;
+        const cnt = w.hash.queryRadius(n.x, n.y, reach + 0.5, this.hashBuf);
         for (let i = 0; i < cnt; i++) {
           const t = w.byId.get(this.hashBuf[i]);
           if (!t || !t.alive || t.team !== AXIOM || claimed.has(t.id) || !hackEligible(w, t)) continue;
           const d = Math.hypot(t.x - n.x, t.y - n.y);
-          if (d > 7.5) continue;
-          const sc = (t.udef?.compute ?? 10) - d * 2 + (t.stunUntil > w.time ? 10 : 0);
+          if (d > reach) continue;
+          // valuable, stunned (an EMP'd robot at full health survives the channel), and not about
+          // to die under our own guns
+          const stunned = t.stunUntil > w.time + 1;
+          const frail = t.hp < t.maxHp * (stunned ? 0.2 : 0.3);
+          const sc = (t.udef?.compute ?? 10) - d * 2 + (stunned ? 20 : 0) - (frail ? 25 : 0);
           if (sc > bs) { bs = sc; best = t; }
         }
         if (best) {
@@ -1163,10 +1240,13 @@ export class Bot {
         }
         if (k > bestN) { bestN = k; bestC = { x: u.x, y: u.y }; bestHack = hk; bestArmored = arm; }
       }
+      const boss = cands.find((u) => u.udef?.boss && (Math.hypot(u.x - hq.x, u.y - hq.y) < s.baseR + 12 || Math.hypot(u.x - ac.x, u.y - ac.y) < 14));
+      if (boss && can('orbital', 60)) { this.useProtocol(w, 'orbital', { x: boss.x, y: boss.y }); return; }
       if (bestC) {
         const freeBw = s.netrunners.reduce((a, n) => a + Math.max(0, H.bandwidth - n.links.filter((l) => w.get(l)).length), 0);
         const nearNets = s.netrunners.filter((n) => Math.hypot(n.x - bestC!.x, n.y - bestC!.y) < 9).length;
-        if (bestN >= 10 + bestArmored * -2 && can('orbital', 60 + keep * 0.5)) {
+        // orbital: dense packs (armoured robots count double — they take 1.5x)
+        if (bestN + bestArmored >= 10 && can('orbital', 60 + keep * 0.5)) {
           this.useProtocol(w, 'orbital', bestC);
           return;
         }
@@ -1174,7 +1254,7 @@ export class Bot {
           this.useProtocol(w, 'override', bestC);
           return;
         }
-        if ((bestN >= 9 || (bestN >= 5 && nearNets > 0 && freeBw >= 3)) && can('emp', 30 + keep * 0.5)) {
+        if ((bestN >= 9 || (bestN >= 4 && nearNets > 0 && freeBw >= 2)) && can('emp', 30 + keep * 0.5)) {
           this.useProtocol(w, 'emp', bestC);
           return;
         }
@@ -1197,6 +1277,6 @@ export class Bot {
   private useProtocol(w: World, id: string, p: Pt): void {
     if (!w.explored[(p.y | 0) * w.w + (p.x | 0)]) return;
     w.commands.push({ c: 'protocol', id, x: p.x, y: p.y });
-    this.data -= id === 'orbital' ? 60 : id === 'override' ? 80 : id === 'emp' ? 30 : 40;
+    this.data -= PROTOCOLS[id].data;
   }
 }

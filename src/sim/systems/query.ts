@@ -66,6 +66,8 @@ export interface AcquireOpts {
   preferBuildings?: boolean;
   unitsOnly?: boolean;
   ignoreWalls?: boolean;
+  /** never pick walls (siege units only hit walls that block their path) */
+  skipWalls?: boolean;
 }
 
 /** Find best hostile target near e. Units are preferred over buildings (unless preferBuildings). */
@@ -84,6 +86,8 @@ export function acquire(w: World, c: TickCache, e: Entity, o: AcquireOpts): Enti
     let score = d;
     if (o.preferBuildings) score += 6;
     if (t.kind === 'engineer' || t.kind === 'netrunner') score -= 0.5;
+    // don't shoot the robot our Netrunner is busy hacking if anything else is around
+    if (t.hackChannelUntil > w.time && e.team === HUMAN) score += 8;
     if (score < bestScore) { bestScore = score; best = t; }
   }
   if (o.unitsOnly) return best;
@@ -94,7 +98,7 @@ export function acquire(w: World, c: TickCache, e: Entity, o: AcquireOpts): Enti
     if (d > o.range) continue;
     if (!targetable(w, e.team, t)) continue;
     let score = d + (o.preferBuildings ? 0 : 3);
-    if (t.bdef?.wall) score += o.ignoreWalls ? 50 : 4;
+    if (t.bdef?.wall) { if (o.skipWalls) continue; score += o.ignoreWalls ? 50 : 4; }
     if (score < bestScore) { bestScore = score; best = t; }
   }
   return best;

@@ -115,6 +115,14 @@ export class Entity {
   builders = 0;
   /** loiter target for guard orders */
   lx = 0; ly = 0; loiterAt = 0;
+  /** moveTo: best distance reached near the current goal (gives up when crowded out of a slot) */
+  nearBest = Infinity; nearT = 0; nearGX = -1; nearGY = -1;
+  /** flow-field progress watchdog: jammed units briefly ignore friendly separation ("ghost") */
+  flowBest = Infinity; flowT = 0; ghostUntil = 0;
+  /** ticks this unit has been refused an A* search by the per-tick budget */
+  pathDenied = 0;
+  /** a Netrunner is channelling a hack on this robot until this time (friendly fire holds off) */
+  hackChannelUntil = 0;
   constructor(id: number, kind: string, cat: Cat, team: Team, x: number, y: number) {
     this.id = id; this.kind = kind; this.cat = cat; this.team = team;
     this.x = this.px = x; this.y = this.py = y;
@@ -147,7 +155,7 @@ export class HumanState {
   harvestMul = 1;
   wreckMul = 1;
   bandwidth = 3;
-  hackTime = 2.5;
+  hackTime = 1.8;
   stats: PlayerStats = { killed: 0, lost: 0, hacked: 0, scrapGathered: 0, dataEarned: 0, built: 0, trained: 0, surgesSurvived: 0, peakSwarm: 0 };
   get brownout(): boolean { return this.powerUsed > this.power; }
   get powerRatio(): number { return this.powerUsed <= this.power ? 1 : Math.max(0.25, this.power / Math.max(1, this.powerUsed)); }
@@ -191,7 +199,7 @@ export interface GameSettings {
 export const DIFF: Record<Difficulty, { compute: number; epoch: number; surge: number; firstSurge: number; startScrap: number }> = {
   recruit: { compute: 0.7, epoch: 90, surge: 0.7, firstSurge: 240, startScrap: 500 },
   veteran: { compute: 1.0, epoch: 75, surge: 1.0, firstSurge: 180, startScrap: 400 },
-  nightmare: { compute: 1.4, epoch: 60, surge: 1.35, firstSurge: 150, startScrap: 350 },
+  nightmare: { compute: 1.25, epoch: 60, surge: 1.2, firstSurge: 165, startScrap: 350 },
 };
 
 // ------------------------------------------------------------------ commands (player → sim)

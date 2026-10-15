@@ -5,6 +5,9 @@
 // Balance matrix (comma lists, parallel workers, aggregated table):
 //   npx tsx tools/headless.ts --seeds 10 --minutes 40 --size 80,96,128 --diff recruit,veteran,nightmare --level 2 --jobs 10 --quiet
 // Flags: --level 0|1|2 (bot level, default 1)  --mode skirmish|endless  --nobot  --quiet  --json  --jobs N
+//        --set PATH=VALUE,...   override balance constants (AXIOM_BAL, ECON, UNITS, BUILDINGS, RESEARCH, PROTOCOLS, DIFF, BOT)
+// Perf stress (N robots march on a bot-defended base, 128 map):   npx tsx tools/headless.ts --stress 900
+// Combat sandbox (open ground, 5 trials):   npx tsx tools/headless.ts --arena rifleman:20 gunner:14,skitter:14
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { AXIOM_BAL } from '../src/sim/ai/axiom';
@@ -14,8 +17,9 @@ import { ECON } from '../src/sim/systems/units';
 import { DIFF } from '../src/sim/world';
 import { generateWorld } from '../src/sim/mapgen';
 import { step } from '../src/sim/step';
+import { setOrder } from '../src/sim/systems/units';
 import { AXIOM, HUMAN, TICK_HZ, type Difficulty, type GameMode } from '../src/sim/types';
-import type { Entity, World } from '../src/sim/world';
+import { World, type Entity } from '../src/sim/world';
 
 const args = process.argv.slice(2);
 const opt = (k: string, d: string) => { const i = args.indexOf('--' + k); return i >= 0 ? args[i + 1] : d; };
@@ -49,7 +53,7 @@ export interface GameResult {
   result: string; minutes: number;
   surgesSurvived: number; surges: number; peakSwarm: number; peakEntities: number;
   killed: number; lost: number; hacked: number; trained: number; built: number;
-  firstSurge: number; swarmAt10: number; swarmAt20: number;
+  firstSurge: number; swarmAt10: number; swarmAt20: number; peak20: number;
   structuresKilled: number; farmsHeld: number;
   protos: string; research: number; vaults: number; maxArmy: number;
   msAvg: number; msMax: number; msAvgBusy: number;
@@ -105,7 +109,7 @@ class Invariants {
         if (tr.badT > 6) this.report(w, `inside blocked tile ${e.kind}#${e.id} @${e.x.toFixed(1)},${e.y.toFixed(1)}`);
       } else tr.badT = 0;
       if (Math.hypot(e.x - tr.x, e.y - tr.y) > 1.0) { tr.x = e.x; tr.y = e.y; tr.t = w.time; }
-      else if (movingOrder(e) && e.targetId === 0 && e.stunUntil <= w.time && w.time - tr.t > 40) {
+      else if (movingOrder(e) && e.targetId === 0 && w.time - e.firedAt > 5 && e.stunUntil <= w.time && w.time - tr.t > 40 && !(e.udef?.weapon === undefined && e.order?.type === 'flow')) {
         this.report(w, `stuck ${e.kind}#${e.id} order=${e.order?.type} @${e.x.toFixed(1)},${e.y.toFixed(1)} for ${(w.time - tr.t).toFixed(0)}s`);
         tr.t = w.time; // report once per 40 s
       }
@@ -113,9 +117,9 @@ class Invariants {
         const k = (e.y | 0) * w.w + (e.x | 0);
         stacks.set(k, (stacks.get(k) ?? 0) + 1);
       }
-      // idle engineers (bot should always employ them)
+      // idle engineers (bot should employ them while safe scrap is within reach of a drop-off)
       if (botOn && e.team === HUMAN && e.kind === 'engineer') {
-        if (!e.order) {
+        if (!e.order && safeScrap(w)) {
           const since = this.idleEng.get(e.id) ?? w.time;
           this.idleEng.set(e.id, since);
           if (w.time - since > 30) { this.report(w, `engineer idle 30s #${e.id} @${e.x.toFixed(1)},${e.y.toFixed(1)}`); this.idleEng.set(e.id, w.time); }
@@ -156,6 +160,18 @@ class Invariants {
   }
 }
 
+let safeAt = -1, safeVal = false;
+/** Is there harvestable scrap near a drop-off with no robots around it? (cached per check) */
+function safeScrap(w: World): boolean {
+  if (safeAt === w.tick) return safeVal;
+  safeAt = w.tick;
+  const drops = w.entities.filter((b) => b.alive && b.team === HUMAN && b.built && b.bdef?.dropoff);
+  const robots = w.entities.filter((u) => u.alive && u.team === AXIOM && u.isUnit);
+  safeVal = w.entities.some((r) => r.alive && r.cat === 'resource' && r.amount > 0 && w.creepAt(r.x, r.y) < 0.3 &&
+    drops.some((d) => Math.hypot(d.x - r.x, d.y - r.y) < 20) && !robots.some((u) => Math.hypot(u.x - r.x, u.y - r.y) < 9));
+  return safeVal;
+}
+
 function movingOrder(e: Entity): boolean {
   const t = e.order?.type;
   return t === 'move' || t === 'amove' || t === 'flow' || t === 'attack';
@@ -167,7 +183,7 @@ export function runGame(seed: number, size: number, diff: Difficulty, lvl: numbe
   const bot = noBot ? null : new Bot(lvl);
   const inv = new Invariants();
   const ticks = mins * 60 * TICK_HZ;
-  let maxTick = 0, sumTick = 0, busySum = 0, busyN = 0, peakEnt = 0, firstSurge = 0, at10 = 0, at20 = 0;
+  let maxTick = 0, sumTick = 0, busySum = 0, busyN = 0, peakEnt = 0, firstSurge = 0, at10 = -1, at20 = -1, peak20 = 0;
   let structuresKilled = 0, farmTicks = 0, vaults = 0, maxArmy = 0;
   const protos: Record<string, number> = { supply: 0, emp: 0, orbital: 0, override: 0 };
   for (let i = 0; i < ticks && !w.result; i++) {
@@ -199,6 +215,7 @@ export function runGame(seed: number, size: number, diff: Difficulty, lvl: numbe
     }
     if (i === 10 * 60 * TICK_HZ) at10 = w.axiom.units;
     if (i === 20 * 60 * TICK_HZ) at20 = w.axiom.units;
+    if (i <= 20 * 60 * TICK_HZ && w.axiom.units > peak20) peak20 = w.axiom.units;
     if (verbose && i % (TICK_HZ * 60) === 0 && i > 0) {
       const hu = w.entities.filter((e) => e.alive && e.team === HUMAN && e.isUnit);
       const eng = hu.filter((e) => e.kind === 'engineer').length;
@@ -217,7 +234,7 @@ export function runGame(seed: number, size: number, diff: Difficulty, lvl: numbe
     result: w.result ?? 'timeout', minutes: +(w.time / 60).toFixed(2),
     surgesSurvived: st.surgesSurvived, surges: w.axiom.surgeN, peakSwarm: st.peakSwarm, peakEntities: peakEnt,
     killed: st.killed, lost: st.lost, hacked: st.hacked, trained: st.trained, built: st.built,
-    firstSurge, swarmAt10: at10, swarmAt20: at20, structuresKilled, farmsHeld: +(farmTicks / TICK_HZ / 60).toFixed(1),
+    firstSurge, swarmAt10: at10, swarmAt20: at20, peak20, structuresKilled, farmsHeld: +(farmTicks / TICK_HZ / 60).toFixed(1),
     protos: `s${protos.supply}e${protos.emp}o${protos.orbital}v${protos.override}`, research: w.human.research.size, vaults, maxArmy,
     msAvg: +(sumTick / Math.max(1, w.tick)).toFixed(3), msMax: +maxTick.toFixed(1), msAvgBusy: busyN ? +(busySum / busyN).toFixed(3) : 0,
     errors: inv.errors, errorSamples: inv.samples,
@@ -225,7 +242,7 @@ export function runGame(seed: number, size: number, diff: Difficulty, lvl: numbe
 }
 
 function line(r: GameResult): string {
-  return `${r.diff.padEnd(9)} ${String(r.size).padStart(3)} s${String(r.seed).padEnd(3)} ${r.result.padEnd(8)} ${r.minutes.toFixed(1).padStart(5)}m | surges ${r.surgesSurvived}/${r.surges} first ${r.firstSurge} | swarm peak ${r.peakSwarm} @10m ${r.swarmAt10} @20m ${r.swarmAt20} | K ${r.killed} L ${r.lost} H ${r.hacked} S ${r.structuresKilled} V ${r.vaults} farm ${r.farmsHeld}m army ${r.maxArmy} res ${r.research} ${r.protos} | ms ${r.msAvg} busy ${r.msAvgBusy} max ${r.msMax} ent ${r.peakEntities} | err ${r.errors}${r.errorSamples.length ? ' :: ' + r.errorSamples.slice(0, 3).join(' | ') : ''}`;
+  return `${r.diff.padEnd(9)} ${String(r.size).padStart(3)} s${String(r.seed).padEnd(3)} ${r.result.padEnd(8)} ${r.minutes.toFixed(1).padStart(5)}m | surges ${r.surgesSurvived}/${r.surges} first ${r.firstSurge} | swarm peak ${r.peakSwarm} (<=20m ${r.peak20}) @10m ${r.swarmAt10} @20m ${r.swarmAt20} | K ${r.killed} L ${r.lost} H ${r.hacked} S ${r.structuresKilled} V ${r.vaults} farm ${r.farmsHeld}m army ${r.maxArmy} res ${r.research} ${r.protos} | ms ${r.msAvg} busy ${r.msAvgBusy} max ${r.msMax} ent ${r.peakEntities} | err ${r.errors}${r.errorSamples.length ? ' :: ' + r.errorSamples.slice(0, 3).join(' | ') : ''}`;
 }
 
 function table(rs: GameResult[]): void {
@@ -240,19 +257,71 @@ function table(rs: GameResult[]): void {
     g2.push(r);
     groups.set(k2, g2);
   }
-  console.log('\n group            n   win%  loss%  avgMin  winMin  surgesSurv  peakSwarm  @20m   ms/tick  busy   max  errors');
+  console.log('\n group            n   win%  loss%  avgMin  winMin  surgesSurv  peakSwarm  pk<=20m @20m*  ms/tick  busy   max  errors   (* games alive at 20m)');
   for (const [k, g] of [...groups.entries()].sort()) {
     const n = g.length;
     const wins = g.filter((r) => r.result === 'victory');
     const losses = g.filter((r) => r.result === 'defeat');
     const avg = (f: (r: GameResult) => number, arr = g) => (arr.length ? arr.reduce((a, r) => a + f(r), 0) / arr.length : 0);
     const busy = g.filter((r) => r.msAvgBusy > 0);
-    console.log(` ${k.padEnd(15)} ${String(n).padStart(3)}  ${(wins.length / n * 100).toFixed(0).padStart(4)}  ${(losses.length / n * 100).toFixed(0).padStart(5)}  ${avg((r) => r.minutes).toFixed(1).padStart(6)}  ${avg((r) => r.minutes, wins).toFixed(1).padStart(6)}  ${avg((r) => r.surgesSurvived).toFixed(1).padStart(10)}  ${avg((r) => r.peakSwarm).toFixed(0).padStart(9)}  ${avg((r) => r.swarmAt20).toFixed(0).padStart(4)}  ${avg((r) => r.msAvg).toFixed(2).padStart(8)}  ${avg((r) => r.msAvgBusy, busy).toFixed(2).padStart(5)}  ${Math.max(...g.map((r) => r.msMax)).toFixed(0).padStart(4)}  ${g.reduce((a, r) => a + r.errors, 0)}`);
+    console.log(` ${k.padEnd(15)} ${String(n).padStart(3)}  ${(wins.length / n * 100).toFixed(0).padStart(4)}  ${(losses.length / n * 100).toFixed(0).padStart(5)}  ${avg((r) => r.minutes).toFixed(1).padStart(6)}  ${avg((r) => r.minutes, wins).toFixed(1).padStart(6)}  ${avg((r) => r.surgesSurvived).toFixed(1).padStart(10)}  ${avg((r) => r.peakSwarm).toFixed(0).padStart(9)}  ${avg((r) => r.peak20, g.filter((r) => r.swarmAt20 >= 0)).toFixed(0).padStart(7)} ${avg((r) => r.swarmAt20, g.filter((r) => r.swarmAt20 >= 0)).toFixed(0).padStart(4)}  ${avg((r) => r.msAvg).toFixed(2).padStart(8)}  ${avg((r) => r.msAvgBusy, busy).toFixed(2).padStart(5)}  ${Math.max(...g.map((r) => r.msMax)).toFixed(0).padStart(4)}  ${g.reduce((a, r) => a + r.errors, 0)}`);
   }
 }
 
 // ------------------------------------------------------------------ main
+// ------------------------------------------------------------------ perf stress
+function stress(n: number): void {
+  const w = generateWorld({ mode: 'skirmish', difficulty: 'veteran', seed: 11, mapSize: 128 });
+  const bot = new Bot(2);
+  for (let i = 0; i < 300 * TICK_HZ; i++) { bot.think(w); step(w); w.events.length = 0; }
+  const hq = w.entities.find((e) => e.kind === 'hq')!;
+  // an unbreakable fortress: keeps the siege (and the entity count) going for the whole window
+  for (const b of w.entities) if (b.alive && b.team === HUMAN && b.isBuilding) b.maxHp = b.hp = 1e7;
+  const kinds = ['skitter', 'skitter', 'skitter', 'gunner', 'gunner', 'brute', 'lancer', 'wasp', 'sapper'];
+  let k = 0;
+  for (let tries = 0; k < n && tries < n * 20; tries++) {
+    const x = w.rng.range(3, w.w - 3), y = w.rng.range(3, w.h - 3);
+    if (Math.hypot(x - hq.x, y - hq.y) < 35 || !w.isWalkableTile(x | 0, y | 0)) continue;
+    const u = w.spawnUnit(kinds[k % kinds.length], AXIOM, x, y);
+    setOrder(u, { type: 'flow', field: 'human', tx: hq.x, ty: hq.y });
+    k++;
+  }
+  let sum = 0, mx = 0, ticks = 0, busy = 0, busyN = 0;
+  for (let i = 0; i < 120 * TICK_HZ && !w.result; i++) {
+    const a = performance.now();
+    bot.think(w); step(w);
+    const d = performance.now() - a;
+    w.events.length = 0;
+    sum += d; ticks++; if (d > mx) mx = d;
+    if (w.entities.length >= 800) { busy += d; busyN++; }
+  }
+  console.log(`stress: ${k} robots spawned | avg ${(sum / ticks).toFixed(2)} ms/tick | with >=800 entities ${(busy / Math.max(1, busyN)).toFixed(2)} ms over ${busyN} ticks | max ${mx.toFixed(1)} ms | ${w.result ?? 'base held'} after ${(ticks / TICK_HZ).toFixed(0)} s`);
+}
+
+// ------------------------------------------------------------------ combat sandbox
+function arena(hs: string, rs: string, trials = 5): void {
+  const parse = (x: string) => x.split(',').filter(Boolean).map((p) => { const [k, n] = p.split(':'); return [k, +n] as [string, number]; });
+  const H = parse(hs), R = parse(rs);
+  let hw = 0, sh = 0, sr = 0, st = 0;
+  for (let tr = 0; tr < trials; tr++) {
+    const w = new World(64, 64, { mode: 'skirmish', difficulty: 'veteran', seed: 100 + tr, mapSize: 64 });
+    w.rebuildWalk(); w.flags.noHqDefeat = true; w.revealAll = true; w.axiom.enabled = false;
+    let i = 0;
+    for (const [k, n] of H) for (let j = 0; j < n; j++, i++) setOrder(w.spawnUnit(k, HUMAN, 20 + (i % 6) * 0.9, 26 + Math.floor(i / 6) * 0.9), { type: 'amove', x: 44, y: 30 });
+    i = 0;
+    for (const [k, n] of R) for (let j = 0; j < n; j++, i++) setOrder(w.spawnUnit(k, AXIOM, 44 + (i % 6) * 0.9, 26 + Math.floor(i / 6) * 0.9), { type: 'amove', x: 20, y: 30 });
+    const alive = (team: number) => w.entities.filter((e) => e.alive && e.team === team && e.isUnit).length;
+    for (let t = 0; t < 180 * TICK_HZ && alive(HUMAN) && alive(AXIOM); t++) { step(w); w.events.length = 0; }
+    if (alive(HUMAN) && !alive(AXIOM)) hw++;
+    sh += alive(HUMAN); sr += alive(AXIOM); st += w.time;
+  }
+  const cost = (L: [string, number][], f: (k: string) => number) => L.reduce((a, [k, n]) => a + f(k) * n, 0);
+  console.log(`${hs} (${cost(H, (k) => UNITS[k].cost.scrap)} scrap) vs ${rs} (${cost(R, (k) => UNITS[k].compute ?? 0)} compute): humans win ${hw}/${trials}, survivors H ${(sh / trials).toFixed(1)} R ${(sr / trials).toFixed(1)}, ${(st / trials).toFixed(0)} s`);
+}
+
 async function main(): Promise<void> {
+  if (args.includes('--stress')) { stress(+opt('stress', '900')); return; }
+  if (args.includes('--arena')) { const i = args.indexOf('--arena'); arena(args[i + 1], args[i + 2], 5); return; }
   const jobsList: { seed: number; size: number; diff: Difficulty }[] = [];
   for (const diff of diffs) for (const size of sizes) for (let s = seed0; s < seed0 + seeds; s++) jobsList.push({ seed: s, size, diff });
   if (worker) {

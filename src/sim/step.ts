@@ -12,6 +12,9 @@ import type { Entity, World } from './world';
 const cache = new TickCache();
 /** max collision radius vs. terrain / buildings (tiles); must be < 0.5 so every unit fits a 1-tile gap */
 const TERRAIN_R = 0.42;
+/** separation query padding (max move + push per tick) and contact cap */
+const SEP_PAD = 0.35;
+const MAX_CONTACTS = 24;
 const sepBuf: number[] = [];
 
 export function getCache(): TickCache { return cache; }
@@ -44,20 +47,28 @@ function walkable(w: World, x: number, y: number): boolean {
 }
 
 /** Apply desired velocities with separation + tile collision. */
-function integrate(w: World, units: Entity[]): void {
+export function integrate(w: World, units: Entity[]): void {
+  // separation only needs neighbours closer than (own radius + largest radius around); hash points
+  // are start-of-tick positions, so pad for this tick's movement
+  let maxR = 0;
+  for (const u of units) if (u.alive && u.radius > maxR) maxR = u.radius;
   for (const e of units) {
     if (!e.alive) continue;
     let dx = e.vx * DT, dy = e.vy * DT;
-    // separation
-    const n = w.hash.queryRadius(e.x, e.y, e.radius + 1.6, sepBuf);
-    let px = 0, py = 0;
+    // separation (a jammed unit 'ghosts' past friends for a moment; enemies still collide)
+    const n = w.hash.queryRadiusExact(e.x, e.y, e.radius + maxR + SEP_PAD, sepBuf);
+    let px = 0, py = 0, touching = 0;
+    const ghost = e.ghostUntil > w.time;
     for (let i = 0; i < n; i++) {
       const o = w.byId.get(sepBuf[i]);
       if (!o || o === e || !o.alive || o.flying !== e.flying) continue;
+      if ((ghost || o.ghostUntil > w.time) && o.team === e.team) continue;
       const ox = e.x - o.x, oy = e.y - o.y;
       const min = e.radius + o.radius;
       const d2 = ox * ox + oy * oy;
       if (d2 >= min * min) continue;
+      // in a pathological pile-up a couple of dozen contacts decide the push anyway
+      if (++touching > MAX_CONTACTS) break;
       if (d2 < 1e-6) { px += (w.rng.next() - 0.5) * 0.05; py += (w.rng.next() - 0.5) * 0.05; continue; }
       const d = Math.sqrt(d2);
       const overlap = min - d;
@@ -117,7 +128,7 @@ function integrate(w: World, units: Entity[]): void {
   }
 }
 
-function checkRules(w: World): void {
+export function checkRules(w: World): void {
   if (w.tick % 10 !== 0) return;
   let hq = 0, core = 0, coreExisted = false;
   for (const e of w.entities) {
