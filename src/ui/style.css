@@ -229,7 +229,7 @@ table.keys td:first-child { width: 42%; }
 .overlay.title { background: linear-gradient(90deg, rgba(3,5,7,0.92) 0%, rgba(3,5,7,0.7) 38%, rgba(3,5,7,0.05) 70%); backdrop-filter: none; justify-content: flex-start; }
 .title-wrap { margin-left: 7vw; width: 440px; }
 .logo { font-size: 92px; font-weight: 700; letter-spacing: 18px; line-height: 1; color: #fff; text-shadow: 0 0 40px rgba(255,51,85,0.55), 0 0 2px #fff; position: relative; }
-.logo::after { content: 'OVERFIT'; position: absolute; left: 3px; top: 0; color: transparent; -webkit-text-stroke: 1px rgba(55,224,200,0.5); clip-path: inset(48% 0 38% 0); animation: glitch 3.5s steps(1) infinite; }
+.logo::after { content: 'OVERFIT'; position: absolute; left: 3px; top: 0; color: transparent; -webkit-text-stroke: 1px rgba(55,224,200,0.55); text-shadow: none; clip-path: inset(48% 0 38% 0); animation: glitch 3.5s steps(1) infinite; }
 .tagline { margin: 10px 0 34px 4px; font-size: 15px; letter-spacing: 7px; color: var(--red); }
 .title-menu .btn { font-size: 17px; }
 .foot { margin-top: 26px; font-size: 11px; letter-spacing: 2px; color: var(--muted); }

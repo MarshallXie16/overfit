@@ -172,6 +172,7 @@ function basePass(g: G, m: TMap, x0: number, y0: number, tw: number, th: number,
   const roofG = new Float32Array(LW * LH);
   const roofB = new Float32Array(LW * LH);
   const rr = new Float32Array(LW * LH * 4); // roof rect per local tile (relative to tile origin)
+  const mat = new Uint8Array(LW * LH); // roof material: 0 gravel, 1 tar, 2 concrete tiles, 3 corrugated (x), 4 corrugated (y)
   for (let j = 0; j < LH; j++) {
     for (let i = 0; i < LW; i++) {
       const k = j * LW + i;
@@ -181,6 +182,7 @@ function basePass(g: G, m: TMap, x0: number, y0: number, tw: number, th: number,
       const c = roofCol(id);
       const v = 0.92 + ((id >>> 13) & 63) / 63 * 0.16;
       roofR[k] = c[0] * v; roofG[k] = c[1] * v; roofB[k] = c[2] * v;
+      mat[k] = (id >>> 17) % 5;
       const rect = roofRect(m, tx, ty);
       rr[k * 4] = rect[0] - tx; rr[k * 4 + 1] = rect[1] - ty; rr[k * 4 + 2] = rect[2] - tx; rr[k * 4 + 3] = rect[3] - ty;
     }
@@ -304,8 +306,27 @@ function basePass(g: G, m: TMap, x0: number, y0: number, tw: number, th: number,
           if (roadSide) { R = 82 * br; Gc = 80 * br; B = 75 * br; }
           else { R = 30 * br; Gc = 30 * br; B = 29 * br; }
         } else {
-          const grav = 0.82 + n2 * 0.18 + n3 * 0.16 + n1 * 0.08;
+          const mt = mat[k];
+          let grav: number;
+          if (mt === 1) {
+            grav = 0.74 + n1 * 0.16 + n2 * 0.05;
+          } else if (mt === 2) {
+            grav = 0.86 + n1 * 0.12 + n2 * 0.06 + n3 * 0.04;
+            const gx = (fx * 3) % 1, gy = (fy * 3) % 1;
+            if (gx < 0.05 || gy < 0.05) grav *= 0.78;
+            else if (gx < 0.1 || gy < 0.1) grav *= 1.06;
+          } else if (mt >= 3) {
+            const ph = (mt === 3 ? u : v) * TAU * 10;
+            grav = 0.86 + Math.sin(ph) * 0.09 + n1 * 0.12 + n3 * 0.04;
+          } else {
+            grav = 0.82 + n2 * 0.18 + n3 * 0.16 + n1 * 0.08;
+          }
           R = roofR[k] * grav; Gc = roofG[k] * grav; B = roofB[k] * grav;
+          if (mt >= 3) {
+            // rust bloom on metal roofs
+            const rs = smooth(0.55, 0.8, N2(u * 1.7 + 9.1, v * 1.7 + 3.3));
+            R += (84 - R) * rs * 0.38; Gc += (60 - Gc) * rs * 0.38; B += (44 - B) * rs * 0.38;
+          }
         }
       }
       void kk;
@@ -724,8 +745,8 @@ export function renderTerrainChunk(map: TerrainMap, x0: number, y0: number, tw: 
         const cx = X + r() * S, cy = Y + r() * S, rad = (0.2 + r() * 0.3) * S;
         const gr = g.createRadialGradient(cx, cy, rad * 0.2, cx, cy, rad);
         gr.addColorStop(0, 'rgba(120,70,140,0.0)');
-        gr.addColorStop(0.5, 'rgba(110,80,150,0.10)');
-        gr.addColorStop(0.7, 'rgba(60,140,120,0.10)');
+        gr.addColorStop(0.5, 'rgba(110,80,150,0.05)');
+        gr.addColorStop(0.7, 'rgba(60,140,120,0.05)');
         gr.addColorStop(1, 'rgba(0,0,0,0)');
         g.fillStyle = gr;
         g.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
@@ -914,36 +935,58 @@ export function renderTerrainChunk(map: TerrainMap, x0: number, y0: number, tw: 
       // roof features
       const roll = r();
       const fx = X + (0.22 + r() * 0.3) * S, fy = Y + (0.22 + r() * 0.3) * S;
-      if (roll < 0.13) {
-        // collapsed hole
+      if (roll < 0.14) {
+        // collapsed hole: lower floor visible, deep shadow under the top-left lip, broken edge, beams
         const cx = X + (0.3 + r() * 0.4) * S, cy = Y + (0.3 + r() * 0.4) * S;
-        const rad = (0.22 + r() * 0.16) * S;
+        const rad = (0.18 + r() * 0.18) * S;
         const seed = Math.floor(r() * 1e9);
-        irregular(g, mulberry32(seed), cx, cy, rad, 9);
-        const gr = g.createRadialGradient(cx - rad * 0.3, cy - rad * 0.3, 0, cx, cy, rad);
-        gr.addColorStop(0, '#0b0b0b');
-        gr.addColorStop(1, '#1b1a19');
-        g.fillStyle = gr;
+        const sx = 0.9 + r() * 0.4, sy = 0.75 + r() * 0.35;
+        const hole = () => {
+          const hr = mulberry32(seed);
+          g.beginPath();
+          const n = 12;
+          for (let i = 0; i < n; i++) {
+            const a = (i / n) * TAU + hr() * 0.25;
+            const d = rad * (0.55 + hr() * 0.5);
+            const px = cx + Math.cos(a) * d * sx, py = cy + Math.sin(a) * d * sy;
+            if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+          }
+          g.closePath();
+        };
+        hole();
+        g.fillStyle = '#2c2824';
         g.fill();
         g.save();
+        hole();
         g.clip();
-        // inner shadow from the top-left lip
-        irregular(g, mulberry32(seed), cx + rad * 0.25, cy + rad * 0.25, rad, 9);
-        g.fillStyle = 'rgba(40,38,34,0.0)';
-        g.fill();
-        for (let i = 0; i < 6; i++) chunk(g, r, cx + (r() - 0.3) * rad, cy + (r() - 0.3) * rad, rad * (0.12 + r() * 0.15), [58, 56, 52], k);
+        for (let i = 0; i < 6; i++) chunk(g, r, cx + (r() - 0.5) * rad * 1.4, cy + (r() - 0.5) * rad * 1.2, rad * (0.1 + r() * 0.14), [74, 70, 64], k);
+        const sg = g.createLinearGradient(cx - rad, cy - rad, cx + rad * 0.7, cy + rad * 0.7);
+        sg.addColorStop(0, 'rgba(0,0,0,0.9)');
+        sg.addColorStop(0.5, 'rgba(0,0,0,0.5)');
+        sg.addColorStop(1, 'rgba(0,0,0,0.05)');
+        g.fillStyle = sg;
+        g.fillRect(cx - rad * 1.5, cy - rad * 1.5, rad * 3, rad * 3);
         g.restore();
-        irregular(g, mulberry32(seed), cx, cy, rad, 9);
-        g.strokeStyle = 'rgba(150,145,135,0.35)';
-        g.lineWidth = 1.2 * k;
+        hole();
+        g.strokeStyle = 'rgba(165,155,140,0.45)';
+        g.lineWidth = 1.1 * k;
         g.stroke();
-        // exposed beams
-        for (let i = 0; i < 2; i++) {
-          const yy = cy + (i - 0.5) * rad * 0.7;
-          g.fillStyle = 'rgba(0,0,0,0.45)';
-          g.fillRect(cx - rad * 1.05 + k, yy + k, rad * 2.1, 1.8 * k);
-          g.fillStyle = '#5a4532';
-          g.fillRect(cx - rad * 1.05, yy, rad * 2.1, 1.8 * k);
+        if (r() < 0.65) {
+          const ang = r() < 0.5 ? 0 : Math.PI / 2;
+          const nb = 1 + Math.floor(r() * 2);
+          for (let i = 0; i < nb; i++) {
+            g.save();
+            g.translate(cx, cy);
+            g.rotate(ang + (r() - 0.5) * 0.35);
+            const off = (i - (nb - 1) / 2) * rad * 0.6;
+            g.fillStyle = 'rgba(0,0,0,0.5)';
+            g.fillRect(-rad * 1.1 + 1.2 * k, off + 1.2 * k, rad * 2.2, 1.8 * k);
+            g.fillStyle = r() < 0.5 ? '#5a4532' : '#5e6062';
+            g.fillRect(-rad * 1.1, off, rad * 2.2, 1.8 * k);
+            g.fillStyle = 'rgba(255,255,255,0.15)';
+            g.fillRect(-rad * 1.1, off, rad * 2.2, 0.5 * k);
+            g.restore();
+          }
         }
       } else if (roll < 0.25) {
         // AC unit
@@ -1089,6 +1132,20 @@ export function renderTerrainChunk(map: TerrainMap, x0: number, y0: number, tw: 
         if (side === 2) g.fillRect(ex, ey + eh - 0.8 * k, ew, 0.8 * k);
         if (side === 3) g.fillRect(ex, ey, 0.8 * k, eh);
         if (side === 1) g.fillRect(ex + ew - 0.8 * k, ey, 0.8 * k, eh);
+        // roof inner shading: shadow under top/left parapets, lit inner face of bottom/right parapets
+        if (lit) {
+          const L2 = 0.13 * S;
+          const gr = side === 0 ? g.createLinearGradient(0, ey + pw, 0, ey + pw + L2) : g.createLinearGradient(ex + pw, 0, ex + pw + L2, 0);
+          gr.addColorStop(0, 'rgba(0,0,0,0.3)');
+          gr.addColorStop(1, 'rgba(0,0,0,0)');
+          g.fillStyle = gr;
+          if (side === 0) g.fillRect(ex, ey + pw, ew, L2);
+          else g.fillRect(ex + pw, ey, L2, eh);
+        } else {
+          g.fillStyle = 'rgba(255,250,235,0.12)';
+          if (side === 2) g.fillRect(ex, ey - 1.8 * k, ew, 0.9 * k);
+          else g.fillRect(ex - 1.8 * k, ey, 0.9 * k, eh);
+        }
         // chipped parapet
         if (r() < 0.3) {
           const t = r();
@@ -1097,6 +1154,54 @@ export function renderTerrainChunk(map: TerrainMap, x0: number, y0: number, tw: 
           g.fillStyle = `rgb(${rc[0] - 10},${rc[1] - 10},${rc[2] - 10})`;
           g.fillRect(gx, gy, side % 2 === 0 ? 0.15 * S : pw, side % 2 === 0 ? pw : 0.15 * S);
         }
+      }
+      // collapsed exterior corner
+      const open = (dx: number, dy: number) => m.at(tx + dx, ty + dy) !== RUIN;
+      const corners: [number, number, number, number][] = [];
+      if (open(0, -1) && open(-1, 0)) corners.push([a0, b0, 1, 1]);
+      if (open(0, -1) && open(1, 0)) corners.push([a1, b0, -1, 1]);
+      if (open(0, 1) && open(-1, 0)) corners.push([a0, b1, 1, -1]);
+      if (open(0, 1) && open(1, 0)) corners.push([a1, b1, -1, -1]);
+      for (const [qx, qy, sx2, sy2] of corners) {
+        if (r() > 0.4) continue;
+        const t1 = (0.35 + r() * 0.3) * S, t2 = (0.35 + r() * 0.3) * S;
+        const pts: number[] = [qx, qy, qx + sx2 * t1, qy];
+        const steps = 5;
+        for (let i = 1; i < steps; i++) {
+          const t = i / steps;
+          const bx = qx + sx2 * t1 * (1 - t), by = qy + sy2 * t2 * t;
+          const j = (r() - 0.3) * 0.12 * S;
+          pts.push(bx + sx2 * j, by + sy2 * j);
+        }
+        pts.push(qx, qy + sy2 * t2);
+        const poly = () => {
+          g.beginPath();
+          g.moveTo(pts[0], pts[1]);
+          for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]);
+          g.closePath();
+        };
+        poly();
+        g.fillStyle = '#2e2a25';
+        g.fill();
+        g.save();
+        poly();
+        g.clip();
+        for (let i = 0; i < 5; i++) chunk(g, r, qx + sx2 * r() * t1 * 0.6, qy + sy2 * r() * t2 * 0.6, (0.04 + r() * 0.06) * S, [86, 82, 76], k);
+        // the standing roof shades the rubble below it (light from the top-left)
+        if (sx2 < 0 || sy2 < 0) {
+          const gr = g.createLinearGradient(qx + sx2 * t1, qy + sy2 * t2, qx, qy);
+          gr.addColorStop(0, 'rgba(0,0,0,0.55)');
+          gr.addColorStop(1, 'rgba(0,0,0,0)');
+          g.fillStyle = gr;
+          g.fillRect(Math.min(qx, qx + sx2 * t1), Math.min(qy, qy + sy2 * t2), t1, t2);
+        }
+        g.restore();
+        g.beginPath();
+        g.moveTo(pts[2], pts[3]);
+        for (let i = 4; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]);
+        g.strokeStyle = 'rgba(175,165,150,0.5)';
+        g.lineWidth = 1.2 * k;
+        g.stroke();
       }
     }
   }

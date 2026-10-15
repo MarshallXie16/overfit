@@ -256,4 +256,39 @@ function render() {
   }
 }
 
+function seamTest(): string {
+  const terrain = sampleMap();
+  const map = { w: MW, h: MH, terrain, seed: 1337 };
+  const full = renderTerrainChunk(map, 0, 0, MW, MH, ppt);
+  const fd = full.getContext('2d')!.getImageData(0, 0, full.width, full.height).data;
+  const out: string[] = [];
+  for (const [cw, ch] of [[20, 12], [8, 8], [13, 7]]) {
+    const c = document.createElement('canvas');
+    c.width = MW * ppt; c.height = MH * ppt;
+    const g = c.getContext('2d')!;
+    for (let y = 0; y < MH; y += ch) for (let x = 0; x < MW; x += cw) {
+      const w = Math.min(cw, MW - x), h = Math.min(ch, MH - y);
+      g.drawImage(renderTerrainChunk(map, x, y, w, h, ppt), x * ppt, y * ppt);
+    }
+    const d = g.getImageData(0, 0, c.width, c.height).data;
+    let max = 0, n = 0;
+    for (let i = 0; i < d.length; i++) {
+      const df = Math.abs(d[i] - fd[i]);
+      if (df > max) max = df;
+      if (df > 8) n++;
+    }
+    out.push(`${cw}x${ch}: maxDiff ${max}, px>8: ${n}`);
+  }
+  return out.join(' | ');
+}
+
 render();
+if (q.get('seamtest') === '1') {
+  const r = seamTest();
+  const div = document.createElement('div');
+  div.id = 'seam';
+  div.textContent = 'SEAM TEST ' + r;
+  div.style.cssText = 'padding:8px 16px;color:#ffd27a';
+  document.body.insertBefore(div, main);
+  console.log('SEAM', r);
+}

@@ -12,6 +12,7 @@ import { TextureBank } from './render/textures';
 import { generateWorld } from './sim/mapgen';
 import type { Difficulty, GameMode } from './sim/types';
 import { Session } from './game/session';
+import { Bot } from './sim/bot';
 import { MISSIONS } from './game/missions';
 import './game/campaign';
 import { store } from './game/storage';
@@ -147,7 +148,8 @@ class App {
 }
 
 const app = new App();
-(window as unknown as { overfit: App }).overfit = app;
+(window as unknown as { overfit: App; overfitDebug: unknown }).overfit = app;
+(window as unknown as { overfitDebug: unknown }).overfitDebug = { Bot };
 app.boot().catch((e) => {
   console.error(e);
   const l = document.getElementById('loading');

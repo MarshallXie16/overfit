@@ -160,9 +160,9 @@ function buildBuildings(A: Atlas): void {
 }
 
 const UNIT_ICON_SCALE: Record<string, number> = {
-  engineer: 1.3, rifleman: 1.25, arc_trooper: 1.25, rocketeer: 1.25, netrunner: 1.25, ranger: 1.05,
-  bulldog: 0.66, volt: 0.68, thumper: 0.6,
-  skitter: 1.6, gunner: 1.2, sapper: 1.85, brute: 0.76, lancer: 0.92, wasp: 1.3, warden: 1.0, colossus: 0.36,
+  engineer: 1.5, rifleman: 1.45, arc_trooper: 1.42, rocketeer: 1.42, netrunner: 1.45, ranger: 1.2,
+  bulldog: 0.72, volt: 0.74, thumper: 0.64,
+  skitter: 1.75, gunner: 1.35, sapper: 2.05, brute: 0.82, lancer: 1.0, wasp: 1.4, warden: 1.08, colossus: 0.4,
 };
 
 function compose(base: HTMLCanvasElement, head: HTMLCanvasElement, rot: number): HTMLCanvasElement {

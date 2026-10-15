@@ -586,56 +586,62 @@ export function drawLab(L: Layers): void {
 }
 
 // ============================================================================ Wall (1x1, mask)
-const WALL_W = 15;
+const WALL_HW = 12;
+function wallBag(g: G, x: number, y: number, w: number, h: number, c: string) {
+  vol(g, rrPath(x - w / 2, y - h / 2, w, h, h * 0.45), c, [x - w / 2, y - h / 2, w, h], { hi: 0.32, lo: 0.42, rim: 'rgba(255,245,220,0.3)', ow: 0.9 });
+}
 export function drawWall(L: Layers, mask: number): void {
-  const { p, b } = L;
-  void p;
+  const { b } = L;
   const arm = (dir: number) => {
-    // dir 0=N,1=E,2=S,3=W; jersey barrier from centre to tile edge (+1px overlap)
+    // dir 0=N,1=E,2=S,3=W: concrete footing + sandbag cap, running from the post to the tile edge (+1 px overlap)
     b.save();
     b.rotate((dir - 1) * (Math.PI / 2));
-    const x0 = 6, x1 = 33, hw = WALL_W / 2;
+    const x0 = 8, x1 = 33, hw = WALL_HW;
     const gr = b.createLinearGradient(0, -hw, 0, hw);
-    gr.addColorStop(0, '#5d5b55');
-    gr.addColorStop(0.32, '#8d8a81');
-    gr.addColorStop(0.5, '#a19d93');
-    gr.addColorStop(0.55, '#77746c');
-    gr.addColorStop(1, '#4b4945');
+    gr.addColorStop(0, '#8e8b82');
+    gr.addColorStop(0.25, '#77746b');
+    gr.addColorStop(0.75, '#5d5b55');
+    gr.addColorStop(1, '#45433f');
     b.fillStyle = gr;
     b.fillRect(x0, -hw, x1 - x0, hw * 2);
-    // segment joints every 16 px (aligned to tile so neighbours match)
-    for (const jx of [16, 32]) {
-      b.fillStyle = 'rgba(0,0,0,0.45)';
-      b.fillRect(jx - 0.6, -hw, 1.2, hw * 2);
-    }
-    b.fillStyle = 'rgba(6,8,10,0.85)';
-    b.fillRect(x0, -hw - 1.2, x1 - x0, 1.2);
-    b.fillRect(x0, hw, x1 - x0, 1.2);
-    // razor wire
-    b.strokeStyle = 'rgba(185,185,178,0.55)';
-    b.lineWidth = 0.6;
-    for (let x = x0 + 2; x < x1; x += 3.2) {
-      b.beginPath();
-      b.ellipse(x, 0, 2.2, 3.2, 0.5, 0, TAU);
-      b.stroke();
+    b.fillStyle = 'rgba(0,0,0,0.4)';
+    b.fillRect(31.4, -hw, 1.2, hw * 2);
+    b.fillStyle = 'rgba(6,8,10,0.9)';
+    b.fillRect(x0, -hw - 1.3, x1 - x0, 1.3);
+    b.fillRect(x0, hw, x1 - x0, 1.3);
+    // sandbag cap: two staggered rows at fixed positions so neighbours line up
+    const cols = ['#8b7c57', '#7e7150', '#958763', '#857753'];
+    for (const [row, y, off] of [[0, -4.2, 0], [1, 4.2, 4]] as const) {
+      for (let x = 8 + off; x < 36; x += 8) {
+        const c = cols[(x / 4 + row + dir) & 3];
+        wallBag(b, x + 4, y, 8.6, 7.2, c);
+      }
     }
     b.restore();
   };
   for (let d = 0; d < 4; d++) if (mask & (1 << d)) arm(d);
   if (mask === 0) {
-    // stand-alone: short barrier + sandbags
-    arm(1);
-    arm(3);
+    // stand-alone: ring of sandbags around the post
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * TAU;
+      b.save();
+      b.translate(Math.cos(a) * 19, Math.sin(a) * 19);
+      b.rotate(a + Math.PI / 2);
+      wallBag(b, 0, 0, 12, 7.5, ['#8b7c57', '#7e7150', '#958763'][i % 3]);
+      b.restore();
+    }
   }
-  // central post (taller block)
-  bevel(b, chamferRect(-11, -11, 22, 22, 3), 3.5, '#8a877e', { top: '#77746c', strength: 0.45 });
-  grime(b, rrPath(-8, -8, 16, 16, 2), [-8, -8, 16, 16], 101 + mask, 14, 0.12);
-  rrPath(-11, -11, 22, 22, 3)(b);
-  b.strokeStyle = 'rgba(6,8,10,0.85)';
-  b.lineWidth = 1.2;
+  // central post: concrete pillar with a steel cap
+  bevel(b, chamferRect(-15, -15, 30, 30, 4), 4, '#8c897f', { top: '#73706a', strength: 0.5 });
+  grime(b, rrPath(-11, -11, 22, 22, 2), [-11, -11, 22, 22], 101 + mask, 16, 0.12);
+  rrPath(-15, -15, 30, 30, 4)(b);
+  b.strokeStyle = 'rgba(6,8,10,0.9)';
+  b.lineWidth = 1.3;
   b.stroke();
-  b.fillStyle = rgba(P.teal, 0.8);
-  b.fillRect(-3, -3, 6, 6);
+  vol(b, rrPath(-7.5, -7.5, 15, 15, 2), P.gun, [-7.5, -7.5, 15, 15], { hi: 0.35, ow: 0.9 });
+  rivets(b, [-5, -5, 5, -5, -5, 5, 5, 5], 0.8, '#888');
+  b.fillStyle = rgba(P.teal, 0.9);
+  b.fillRect(-4.5, -1.2, 9, 2.4);
 }
 
 // ============================================================================ Turrets

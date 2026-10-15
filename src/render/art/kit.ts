@@ -480,7 +480,7 @@ export function hazardStripe(g: G, x: number, y: number, w: number, h: number, a
 /** Scrap bits (used for piles in depot / scrap fields). */
 export function scrapBits(g: G, cx: number, cy: number, rad: number, seed: number, n = 18, e?: G): void {
   const r = mulberry32(seed);
-  const cols = ['#5d5f61', '#6e4a2e', '#7b7a72', '#4a4c4f', '#8a5a34', '#545a4b', '#3c3e40'];
+  const cols = ['#6a6d70', '#7d5233', '#8a887f', '#55585c', '#9a6438', '#5f6654', '#4a4c4f', '#a07a4a'];
   for (let i = 0; i < n; i++) {
     const a = r() * TAU;
     const d = Math.sqrt(r()) * rad;

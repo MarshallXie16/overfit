@@ -69,17 +69,18 @@ function fxExplosion(i: number): HTMLCanvasElement {
     const d = Math.sqrt(r());
     blobs.push([Math.cos(a) * d, Math.sin(a) * d, 0.35 + r() * 0.45, r()]);
   }
-  const R = 16 + 44 * Math.pow(t, 0.55);
+  const R = 24 + 42 * Math.pow(t, 0.5);
   // smoke (behind)
   if (t > 0.15) {
     const sa = Math.min(1, (t - 0.15) * 3) * (1 - Math.pow(t, 3) * 0.85);
     for (const [bx, by, br, bv] of blobs) {
       const x = bx * R * 0.75 + t * 4, y = by * R * 0.75 - t * 8;
       const rad = br * R * (0.75 + t * 0.4);
-      const gr = g.createRadialGradient(x - rad * 0.35, y - rad * 0.35, 0, x, y, rad);
-      const shade = 34 + bv * 26 + t * 18;
-      gr.addColorStop(0, `rgba(${shade + 30},${shade + 26},${shade + 22},${0.85 * sa})`);
-      gr.addColorStop(0.6, `rgba(${shade},${shade - 2},${shade - 4},${0.7 * sa})`);
+      const gr = g.createRadialGradient(x - rad * 0.42, y - rad * 0.42, rad * 0.05, x, y, rad);
+      const shade = 30 + bv * 24 + t * 16;
+      gr.addColorStop(0, `rgba(${shade + 46},${shade + 42},${shade + 36},${0.9 * sa})`);
+      gr.addColorStop(0.45, `rgba(${shade + 8},${shade + 6},${shade + 4},${0.82 * sa})`);
+      gr.addColorStop(0.8, `rgba(${shade - 8},${shade - 9},${shade - 10},${0.55 * sa})`);
       gr.addColorStop(1, `rgba(${shade - 10},${shade - 10},${shade - 10},0)`);
       g.fillStyle = gr;
       g.beginPath();
@@ -93,15 +94,23 @@ function fxExplosion(i: number): HTMLCanvasElement {
     g.save();
     g.globalCompositeOperation = 'lighter';
     if (i === 0) {
-      glow(g, 0, 0, 60, '#ffd27a', 0.9);
-      for (let k = 0; k < 10; k++) {
-        const a = (k / 10) * TAU + r() * 0.3;
-        glowLine(g, [0, 0, Math.cos(a) * (26 + r() * 22), Math.sin(a) * (26 + r() * 22)], '#ffcf7a', 2.5, 0.8, 3);
+      glow(g, 0, 0, 62, '#ffd27a', 0.95);
+      glow(g, 0, 0, 30, '#ffffff', 0.9);
+      for (let k = 0; k < 6; k++) {
+        const a = (k / 6) * TAU + r() * 0.5;
+        const L2 = 24 + r() * 16;
+        g.beginPath();
+        g.moveTo(Math.cos(a - 0.25) * 8, Math.sin(a - 0.25) * 8);
+        g.lineTo(Math.cos(a) * L2, Math.sin(a) * L2);
+        g.lineTo(Math.cos(a + 0.25) * 8, Math.sin(a + 0.25) * 8);
+        g.closePath();
+        g.fillStyle = 'rgba(255,220,150,0.6)';
+        g.fill();
       }
     }
     for (const [bx, by, br, bv] of blobs) {
-      const x = bx * R * 0.6, y = by * R * 0.6 - t * 6;
-      const rad = br * R * (0.7 - t * 0.25);
+      const x = bx * R * 0.55, y = by * R * 0.55 - t * 6;
+      const rad = br * R * (0.85 - t * 0.3);
       const heat = Math.max(0, 1 - t * 1.6 - bv * 0.3);
       const gr = g.createRadialGradient(x, y, 0, x, y, rad);
       gr.addColorStop(0, `rgba(255,${200 + heat * 55},${120 + heat * 120},${0.9 * fa})`);
@@ -145,9 +154,10 @@ function fxSmoke(): HTMLCanvasElement {
     const d = r() * 12;
     const x = Math.cos(a) * d, y = Math.sin(a) * d;
     const rad = 10 + r() * 10;
-    const gr = g.createRadialGradient(x - rad * 0.3, y - rad * 0.3, 0, x, y, rad);
-    gr.addColorStop(0, 'rgba(120,118,112,0.5)');
-    gr.addColorStop(0.6, 'rgba(80,79,76,0.35)');
+    const gr = g.createRadialGradient(x - rad * 0.4, y - rad * 0.4, rad * 0.05, x, y, rad);
+    gr.addColorStop(0, 'rgba(150,147,140,0.62)');
+    gr.addColorStop(0.5, 'rgba(96,94,90,0.5)');
+    gr.addColorStop(0.85, 'rgba(70,69,66,0.25)');
     gr.addColorStop(1, 'rgba(60,60,60,0)');
     g.fillStyle = gr;
     g.beginPath();
@@ -462,62 +472,78 @@ function fxScaffold(n: number): HTMLCanvasElement {
   const raw = renderSprite(size, size, (L) => {
     const { b, m } = L;
     const r = mulberry32(600 + n);
-    const step = 32;
-    const x0 = -H + 4, x1 = H - 4;
-    // planks on some bays
-    for (let gx = x0; gx < x1 - 1; gx += step) {
-      for (let gy = x0; gy < x1 - 1; gy += step) {
-        const edge = gx === x0 || gy === x0 || gx + step >= x1 - 1 || gy + step >= x1 - 1;
-        if (!edge && r() < 0.6) continue;
-        if (r() < 0.35) continue;
-        const w = Math.min(step, x1 - gx);
-        const hgt = Math.min(step, x1 - gy);
-        for (let k = 0; k < 3; k++) {
-          const py = gy + 2 + k * ((hgt - 4) / 3);
-          vol(m, rrPath(gx + 1, py, w - 2, (hgt - 4) / 3 - 1, 0.6), mix(P.wood, '#8a6a42', r()), [gx, py, w, 8], { hi: 0.25, rim: null, ow: 0.6 });
-        }
+    const o = H - 3; // outer ring
+    const i = H - 14; // inner ring
+    const bays = Math.max(1, n * 2);
+    const bs = (o * 2) / bays;
+    const bsi = (i * 2) / bays;
+    // interior ledgers (light, every tile)
+    if (n >= 2) {
+      for (let k = 1; k < n; k++) {
+        const v = -H + k * 64;
+        limb(b, [-i, v, i, v], 1.2, '#7c8184', { hi: 0.35 });
+        limb(b, [v, -i, v, i], 1.2, '#7c8184', { hi: 0.35 });
       }
     }
-    // ledgers (pipes) on the grid
-    const pipe = (ax: number, ay: number, bx: number, by: number) => limb(b, [ax, ay, bx, by], 2, '#8e9396', { hi: 0.5 });
-    for (let v = x0; v <= x1 + 0.1; v += (x1 - x0) / Math.max(1, Math.round((x1 - x0) / step))) {
-      pipe(x0, v, x1, v);
-      pipe(v, x0, v, x1);
-    }
-    // diagonal braces on the outer bays
-    const bays = Math.max(1, Math.round((x1 - x0) / step));
-    const bs = (x1 - x0) / bays;
-    for (let k = 0; k < bays; k++) {
-      if (k % 2 === 0) {
-        limb(b, [x0 + k * bs, x0, x0 + (k + 1) * bs, x0 + bs], 1.3, '#a3a8aa', { hi: 0.4 });
-        limb(b, [x0 + k * bs, x1, x0 + (k + 1) * bs, x1 - bs], 1.3, '#a3a8aa', { hi: 0.4 });
+    // walkway planks between the rings (some missing)
+    const plankRun = (ax: number, ay: number, bx: number, by: number) => {
+      const len = Math.hypot(bx - ax, by - ay);
+      const ang = Math.atan2(by - ay, bx - ax);
+      m.save();
+      m.translate(ax, ay);
+      m.rotate(ang);
+      for (let d = 0; d < len - 2; d += 14) {
+        if (r() < 0.18) continue;
+        const w = Math.min(13, len - d);
+        vol(m, rrPath(d + 0.5, 1.5, w - 1, 8, 0.6), mix(P.wood, '#8a6a42', r() * 0.7), [d, 1.5, w, 8], { hi: 0.28, rim: null, ow: 0.6 });
+        line(m, d + 1, 5.5, d + w - 1, 5.5, 'rgba(0,0,0,0.25)', 0.6);
+      }
+      m.restore();
+    };
+    plankRun(-o, -o, o, -o);
+    plankRun(o, -o, o, o);
+    plankRun(o, o, -o, o);
+    plankRun(-o, o, -o, -o);
+    // rings (ledgers)
+    const ring = (rr: number, w: number, c: string) => {
+      limb(b, [-rr, -rr, rr, -rr, rr, rr, -rr, rr, -rr, -rr], w, c, { hi: 0.5 });
+    };
+    ring(o, 2.1, '#9a9fa2');
+    ring(i, 1.8, '#8e9396');
+    // transoms + standards (poles) at every bay
+    for (let k = 0; k <= bays; k++) {
+      const vo = -o + k * bs;
+      const vi = -i + k * bsi;
+      for (const [ax, ay, bx2, by2] of [[vo, -o, vi, -i], [vo, o, vi, i], [-o, vo, -i, vi], [o, vo, i, vi]]) {
+        limb(b, [ax, ay, bx2, by2], 1.4, '#8e9396', { hi: 0.4 });
+        vol(b, circPath(ax, ay, 2.5), '#6c7174', [ax - 2.5, ay - 2.5, 5, 5], { radial: true, rim: null, ow: 0.7 });
+        vol(b, circPath(bx2, by2, 2.1), '#6c7174', [bx2 - 2, by2 - 2, 4, 4], { radial: true, rim: null, ow: 0.6 });
       }
     }
-    // couplers at nodes
-    for (let i = 0; i <= bays; i++) {
-      for (let j = 0; j <= bays; j++) {
-        vol(b, circPath(x0 + i * bs, x0 + j * bs, 2.4), '#6c7174', [0, 0, 4, 4], { radial: true, rim: null, ow: 0.6 });
-      }
+    // diagonal bracing on the outer face (alternating bays)
+    for (let k = 0; k < bays; k += 2) {
+      const a0 = -o + k * bs, a1 = a0 + bs;
+      limb(b, [a0, -o - 0.5, a1, -o + 0.5], 1, '#b0b5b7', { outline: null });
+      limb(b, [o + 0.5, a0, o - 0.5, a1], 1, '#b0b5b7', { outline: null });
     }
     // hazard tape across one corner
     b.save();
-    b.translate(x1 - bs * 0.6, x0 + bs * 0.6);
+    b.translate(o - 9, -o + 9);
     b.rotate(-Math.PI / 4);
-    for (let k = -4; k < 4; k++) {
+    for (let k = -3; k < 3; k++) {
       b.fillStyle = k % 2 ? 'rgba(20,20,20,0.85)' : 'rgba(226,160,60,0.9)';
       b.fillRect(k * 5, -1.6, 5, 3.2);
     }
     b.restore();
     if (n >= 3) {
-      // tarp hung on one side
       b.save();
-      b.globalAlpha = 0.75;
-      vol(b, rrPath(x0 + 2, x1 - 10, (x1 - x0) * 0.45, 9, 1), P.tarp, [x0, x1 - 10, (x1 - x0) * 0.45, 9], { hi: 0.25 });
+      b.globalAlpha = 0.8;
+      vol(b, rrPath(-o + 4, o - 11, o * 0.9, 10, 1), P.tarp, [-o, o - 11, o, 10], { hi: 0.25 });
       b.restore();
     }
   }, { shadow: { dx: 3, dy: 4, blur: 3, a: 0.45 }, mid: true, midShadow: { dx: 1.5, dy: 2, blur: 2, a: 0.4 }, outline: 0.9 });
   const [c, g] = canvas(size, size);
-  g.globalAlpha = 0.88;
+  g.globalAlpha = 0.9;
   g.drawImage(raw, 0, 0);
   return c;
 }
@@ -592,8 +618,9 @@ function dirtPatch(p: G, rad: number, seed: number): void {
 function resScrap(v: number): HTMLCanvasElement {
   return renderSprite(96, 96, (L) => {
     const { p, m, b, e } = L;
-    dirtPatch(p, 40, 700 + v);
-    scrapBits(m, 0, 2, 30, 710 + v, 26, e);
+    dirtPatch(p, 42, 700 + v);
+    scrapBits(p, 0, 2, 36, 705 + v, 30);
+    scrapBits(m, 0, 2, 31, 710 + v, 34, e);
     if (v === 0) {
       girder(b, -26, -14, 22, 10, 7, '#7a4a2b');
       girder(b, -20, 16, 26, -10, 6, '#6b5a48');
@@ -779,62 +806,90 @@ function decalCrater(v: number): HTMLCanvasElement {
   const [c, g] = canvas(128, 128);
   g.translate(64, 64);
   const r = mulberry32(980 + v);
-  const R = v === 0 ? 30 : 22;
-  // ejecta
-  for (let k = 0; k < 90; k++) {
-    const a = r() * TAU, d = R * (0.9 + r() * 0.9);
-    const s = 0.8 + r() * 2.2;
-    g.fillStyle = r() < 0.5 ? 'rgba(80,72,60,0.6)' : 'rgba(20,18,16,0.5)';
-    g.fillRect(Math.cos(a) * d, Math.sin(a) * d, s, s);
-  }
-  const eg = g.createRadialGradient(0, 0, R * 0.8, 0, 0, R * 1.7);
-  eg.addColorStop(0, 'rgba(70,62,52,0.55)');
-  eg.addColorStop(1, 'rgba(70,62,52,0)');
-  g.fillStyle = eg;
+  const R = v === 0 ? 27 : 19;
+  // scorched surround
+  const sg = g.createRadialGradient(0, 0, R * 0.6, 0, 0, R * 2.2);
+  sg.addColorStop(0, 'rgba(10,8,6,0.5)');
+  sg.addColorStop(1, 'rgba(10,8,6,0)');
+  g.fillStyle = sg;
   g.fillRect(-64, -64, 128, 128);
-  // rim
-  const rim: number[] = [];
-  for (let k = 0; k < 20; k++) {
-    const a = (k / 20) * TAU;
-    const rr = R * (1 + (r() - 0.5) * 0.18);
-    rim.push(Math.cos(a) * rr, Math.sin(a) * rr);
+  // ejecta streaks
+  for (let k = 0; k < 22; k++) {
+    const a = r() * TAU;
+    const l0 = R * 1.1, l1 = R * (1.5 + r() * 0.9);
+    const w = 0.05 + r() * 0.07;
+    g.beginPath();
+    g.moveTo(Math.cos(a - w) * l0, Math.sin(a - w) * l0);
+    g.lineTo(Math.cos(a) * l1, Math.sin(a) * l1);
+    g.lineTo(Math.cos(a + w) * l0, Math.sin(a + w) * l0);
+    g.closePath();
+    g.fillStyle = r() < 0.6 ? 'rgba(92,82,66,0.35)' : 'rgba(20,17,14,0.4)';
+    g.fill();
   }
-  const path = roundPolyPath(rim, 3);
+  // raised rim: irregular ring, lit on the outer top-left, shaded bottom-right
+  const outer: number[] = [];
+  const inner: number[] = [];
+  const n = 24;
+  for (let k = 0; k < n; k++) {
+    const a = (k / n) * TAU;
+    const ro = R * (1.22 + (r() - 0.5) * 0.22);
+    const ri = R * (0.94 + (r() - 0.5) * 0.1);
+    outer.push(Math.cos(a) * ro, Math.sin(a) * ro);
+    inner.push(Math.cos(a) * ri, Math.sin(a) * ri);
+  }
+  const ring = () => {
+    g.beginPath();
+    g.moveTo(outer[0], outer[1]);
+    for (let k = 2; k < outer.length; k += 2) g.lineTo(outer[k], outer[k + 1]);
+    g.closePath();
+    g.moveTo(inner[0], inner[1]);
+    for (let k = inner.length - 2; k >= 0; k -= 2) g.lineTo(inner[k], inner[k + 1]);
+    g.closePath();
+  };
+  ring();
+  const rg = g.createLinearGradient(-R * 1.2, -R * 1.2, R * 1.2, R * 1.2);
+  rg.addColorStop(0, '#6a5f50');
+  rg.addColorStop(0.5, '#4a4237');
+  rg.addColorStop(1, '#2a251f');
+  g.fillStyle = rg;
+  g.fill('evenodd');
+  // bowl: near (top-left) inner wall in shadow, far (bottom-right) wall catches light
   g.save();
-  path(g);
-  g.fillStyle = '#2b2722';
+  g.beginPath();
+  g.moveTo(inner[0], inner[1]);
+  for (let k = 2; k < inner.length; k += 2) g.lineTo(inner[k], inner[k + 1]);
+  g.closePath();
+  g.fillStyle = '#2b2620';
   g.fill();
   g.clip();
-  // bowl: near (top-left) inner wall in shadow, far (bottom-right) wall lit
   const bg = g.createLinearGradient(-R, -R, R, R);
-  bg.addColorStop(0, 'rgba(0,0,0,0.65)');
-  bg.addColorStop(0.55, 'rgba(0,0,0,0.25)');
-  bg.addColorStop(1, 'rgba(150,135,110,0.3)');
+  bg.addColorStop(0, 'rgba(0,0,0,0.75)');
+  bg.addColorStop(0.5, 'rgba(0,0,0,0.3)');
+  bg.addColorStop(1, 'rgba(160,140,112,0.32)');
   g.fillStyle = bg;
-  g.fillRect(-R, -R, R * 2, R * 2);
-  const cg = g.createRadialGradient(R * 0.1, R * 0.1, 0, 0, 0, R * 0.6);
-  cg.addColorStop(0, 'rgba(0,0,0,0.45)');
+  g.fillRect(-R * 1.1, -R * 1.1, R * 2.2, R * 2.2);
+  const cg = g.createRadialGradient(R * 0.1, R * 0.1, 0, 0, 0, R * 0.55);
+  cg.addColorStop(0, 'rgba(0,0,0,0.35)');
   cg.addColorStop(1, 'rgba(0,0,0,0)');
   g.fillStyle = cg;
   g.fillRect(-R, -R, R * 2, R * 2);
-  for (let k = 0; k < 8; k++) {
-    const x = (r() - 0.5) * R, y = (r() - 0.5) * R;
-    g.fillStyle = 'rgba(90,85,78,0.6)';
-    g.fillRect(x, y, 2 + r() * 2, 1.5 + r() * 2);
+  g.restore();
+  // clods on the rim
+  for (let k = 0; k < 16; k++) {
+    const a = r() * TAU, d = R * (1.05 + r() * 0.5);
+    const x = Math.cos(a) * d, y = Math.sin(a) * d, s = 1.2 + r() * 2.4;
+    g.fillStyle = 'rgba(0,0,0,0.4)';
+    g.beginPath();
+    g.arc(x + 0.8, y + 1, s, 0, TAU);
+    g.fill();
+    const cgr = g.createRadialGradient(x - s * 0.4, y - s * 0.4, 0, x, y, s);
+    cgr.addColorStop(0, '#7a6d5a');
+    cgr.addColorStop(1, '#3a332a');
+    g.fillStyle = cgr;
+    g.beginPath();
+    g.arc(x, y, s, 0, TAU);
+    g.fill();
   }
-  g.restore();
-  // rim highlight (top-left outer lip lit) and dark lower-right outer lip
-  g.save();
-  g.lineWidth = 3;
-  g.strokeStyle = 'rgba(140,128,108,0.55)';
-  g.beginPath();
-  g.arc(0, 0, R + 1, Math.PI * 0.95, Math.PI * 1.75);
-  g.stroke();
-  g.strokeStyle = 'rgba(10,8,6,0.5)';
-  g.beginPath();
-  g.arc(0, 0, R + 1.5, -0.1, Math.PI * 0.75);
-  g.stroke();
-  g.restore();
   return c;
 }
 

@@ -38,7 +38,7 @@ function drawInfantry(L: Layers, sp: InfSpec, f: number) {
   contact(L.p, 0, 0, 14, 14, 0.16);
   // legs + boots
   for (const s of [-1, 1]) {
-    const fx = 1.5 + st * 6.5 * (s < 0 ? 1 : -1);
+    const fx = 1.5 + st * 9 * (s < 0 ? 1 : -1);
     const fy = s * 5.6;
     limb(b, [-1, s * 4.5, fx - 1.5, fy], 4.6, darken(sp.uniform, 0.15));
     boot(b, fx, fy);

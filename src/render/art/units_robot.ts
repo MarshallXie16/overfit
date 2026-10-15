@@ -268,8 +268,9 @@ export function drawBrute(L: Layers, pal: TeamPal, f: number): void {
   plate(g, P3, mix(P.ax3, P.ax4, 0.3), 5, 53);
   glowLine(e, [9, -31, -0.5, -26.5, -6, 0, -0.5, 26.5, 9, 31], pal.glow, 0.9, 0.55, 3.5);
   // dorsal ridge (short, tapered)
-  plate(g, [20, -3, -2, -4.5, -20, -3.5, -30, 0, -20, 3.5, -2, 4.5, 20, 3], P.ax4, 2, 54, { grimeN: 0 });
-  for (const x of [-18, -8, 2, 12]) groove(g, [x, -3.2, x, 3.2], 0.55, 0.9);
+  groove(g, [20, 0, 4, 0], 0.5, 1);
+  groove(g, [-10, 0, -22, 0], 0.5, 1);
+  for (const x of [12, -16]) vol(g, circPath(x, 0, 2.2), P.ax4, [x - 2.2, -2.2, 4.4, 4.4], { radial: true, hi: 0.4, rim: null, ow: 0.7 });
   // rear vents
   for (let i = -1; i <= 1; i++) {
     vol(g, rrPath(-36, i * 6 - 1.6, 7, 3.2, 1), '#14070a', [-36, i * 6 - 1.6, 7, 3.2], { rim: null, ow: 0.6 });
@@ -545,5 +546,5 @@ export function drawColossus(L: Layers, pal: TeamPal, f: number): void {
 }
 
 export const ROBOT_CANVAS: Record<string, number> = {
-  skitter: 64, gunner: 80, sapper: 64, brute: 128, lancer: 104, wasp: 72, warden: 104, colossus: 264,
+  skitter: 64, gunner: 80, sapper: 64, brute: 148, lancer: 104, wasp: 72, warden: 104, colossus: 264,
 };

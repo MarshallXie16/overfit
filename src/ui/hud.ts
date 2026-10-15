@@ -173,6 +173,8 @@ export class Hud {
     this.cardT -= dt;
     if (this.cardT <= 0) { this.cardT = 0.15; this.refreshCard(); this.refreshSelDynamic(); this.refreshObjectives(); }
     this.updateSurgeArrows();
+    this.attackT -= dt;
+    if (this.attackT <= 0) { this.attackT = 0.5; this.checkUnderAttack(); }
     this.el.paused.style.display = w.paused ? 'block' : 'none';
   }
 
@@ -330,6 +332,28 @@ export class Hud {
     this.el.toast.textContent = msg;
     this.el.toast.classList.add('show');
     this.toastT = 2.2;
+  }
+
+  // ---------------------------------------------------------------- under-attack alerts
+  private attackT = 0;
+  private lastAttackAlert = { bld: -99, unit: -99 };
+  private checkUnderAttack(): void {
+    const w = this.w;
+    const vb = this.r.viewBounds();
+    let bld: Entity | null = null, unit: Entity | null = null;
+    for (const e of w.entities) {
+      if (!e.alive || e.team !== HUMAN || w.time - e.attackedAt > 1) continue;
+      const onScreen = e.x > vb.x0 && e.x < vb.x1 && e.y > vb.y0 && e.y < vb.y1;
+      if (onScreen) continue;
+      if (e.isBuilding) bld = e; else if (e.isUnit) unit = e;
+    }
+    if (bld && w.time - this.lastAttackAlert.bld > 20) {
+      this.lastAttackAlert.bld = w.time;
+      this.alert(`${bld.bdef?.name ?? 'Base'} under attack!`, bld.x, bld.y, 'danger');
+    } else if (unit && w.time - this.lastAttackAlert.unit > 25 && w.time - this.lastAttackAlert.bld > 8) {
+      this.lastAttackAlert.unit = w.time;
+      this.alert(unit.kind === 'engineer' ? 'Engineers under attack!' : 'Our forces are under attack', unit.x, unit.y, 'warn');
+    }
   }
 
   // ---------------------------------------------------------------- surge arrows

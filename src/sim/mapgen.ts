@@ -10,6 +10,19 @@ import {
 } from './types';
 import { DIFF, Rng, World, type GameSettings } from './world';
 
+/** Campaign: a structure placed at an explicit spot relative to the player→AXIOM axis. */
+export interface StructurePlacement {
+  kind: string;
+  /** default AXIOM (server_farm: NEUTRAL) */
+  team?: Team;
+  /** 0 = player start … 1 = AXIOM start */
+  along: number;
+  /** lateral offset in tiles, perpendicular to the axis */
+  off?: number;
+  /** default true */
+  built?: boolean;
+}
+
 export interface MapGenOptions {
   river?: boolean;
   farms?: number;
@@ -26,6 +39,10 @@ export interface MapGenOptions {
   /** 0..1 how far AXIOM's forward structures reach toward the player */
   axiomReach?: number;
   density?: number;
+  /** force the player's start corner (0 SW, 1 SE, 2 NE, 3 NW); AXIOM takes the opposite one */
+  playerCorner?: number;
+  /** extra structures at explicit positions (campaign scripting) */
+  structures?: StructurePlacement[];
 }
 
 export function generateWorld(settings: GameSettings, opts: MapGenOptions = {}): World {
@@ -129,7 +146,8 @@ export function generateWorld(settings: GameSettings, opts: MapGenOptions = {}):
   }
 
   // ---------------------------------------------------------------- key positions
-  const corner = rng.int(0, 3);
+  const rolledCorner = rng.int(0, 3);
+  const corner = opts.playerCorner !== undefined ? ((opts.playerCorner % 4) + 4) % 4 : rolledCorner;
   const m = 13;
   const corners: Pt[] = [{ x: m, y: N - m }, { x: N - m, y: N - m }, { x: N - m, y: m }, { x: m, y: m }];
   const ps = corners[corner];
@@ -174,6 +192,14 @@ export function generateWorld(settings: GameSettings, opts: MapGenOptions = {}):
     p.y = Math.max(6, Math.min(N - 7, p.y));
     clearCircle(p.x, p.y, 4.5);
   }
+  const extraSites: Pt[] = [];
+  for (const s of opts.structures ?? []) {
+    const p = lerp(ps, as, s.along, s.off ?? 0);
+    p.x = Math.max(6, Math.min(N - 7, p.x));
+    p.y = Math.max(6, Math.min(N - 7, p.y));
+    clearCircle(p.x, p.y, Math.max(4.5, BUILDINGS[s.kind].size / 2 + 2.5));
+    extraSites.push(p);
+  }
 
   // ---------------------------------------------------------------- scrap field sites
   const scrapSites: Pt[] = [];
@@ -199,7 +225,7 @@ export function generateWorld(settings: GameSettings, opts: MapGenOptions = {}):
   // ---------------------------------------------------------------- borders & connectivity
   w.rebuildWalk();
   const ensure = (p: Pt) => carveTo(w, rng, Math.floor(p.x), Math.floor(p.y), Math.floor(ps.x), Math.floor(ps.y));
-  for (const p of [as, ...fabSites, ...relaySites, ...vaultSites, ...farmSites, ...scrapSites]) ensure(p);
+  for (const p of [as, ...fabSites, ...relaySites, ...vaultSites, ...farmSites, ...scrapSites, ...extraSites]) ensure(p);
   w.rebuildWalk();
 
   // ---------------------------------------------------------------- human start
@@ -242,12 +268,12 @@ export function generateWorld(settings: GameSettings, opts: MapGenOptions = {}):
   }
 
   // ---------------------------------------------------------------- AXIOM
-  const placeAt = (kind: string, team: Team, p: Pt): void => {
+  const placeAt = (kind: string, team: Team, p: Pt, built = true): void => {
     const s = BUILDINGS[kind].size;
     for (let tries = 0; tries < 80; tries++) {
       const a = tries * 2.4, r = tries * 0.18;
       const tx = Math.round(p.x + Math.cos(a) * r - s / 2), ty = Math.round(p.y + Math.sin(a) * r - s / 2);
-      if (areaOk(w, tx - 1, ty - 1, s + 2)) { w.spawnBuilding(kind, team, tx, ty, true); return; }
+      if (areaOk(w, tx - 1, ty - 1, s + 2)) { w.spawnBuilding(kind, team, tx, ty, built); return; }
     }
   };
   if (opts.core ?? true) placeAt('core', AXIOM, as);
@@ -262,6 +288,7 @@ export function generateWorld(settings: GameSettings, opts: MapGenOptions = {}):
     placeAt('lancet', AXIOM, { x: h.x + (toP.x / d) * 5 + rng.range(-2, 2), y: h.y + (toP.y / d) * 5 + rng.range(-2, 2) });
   }
   for (const p of farmSites) placeAt('server_farm', NEUTRAL, p);
+  (opts.structures ?? []).forEach((s, i) => placeAt(s.kind, s.team ?? (s.kind === 'server_farm' ? NEUTRAL : AXIOM), extraSites[i], s.built ?? true));
 
   // pre-grow the Grid
   const c = new TickCache();
