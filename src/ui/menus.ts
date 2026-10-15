@@ -92,7 +92,7 @@ export class Menus {
           <button class="btn" data-a="endless">Endless Swarm<small>Survive the ever-growing swarm · Daily challenge #${dailyNumber()}</small></button>
           <div class="row"><button class="btn" data-a="howto">How to Play</button><button class="btn" data-a="settings">Settings</button></div>
         </div>
-        <div class="foot">An RTS about teaching a machine the wrong lessons · v0.9${window.innerWidth < 1000 ? '<br><span style="color:var(--amber)">Best played on a desktop with mouse & keyboard.</span>' : ''}</div>
+        <div class="foot">An RTS about teaching a machine the wrong lessons · v1.0${window.innerWidth < 1000 ? '<br><span style="color:var(--amber)">Best played on a desktop with mouse & keyboard.</span>' : ''}</div>
       </div>`, 'title');
     this.on('[data-a=campaign]', () => this.campaign());
     this.on('[data-a=skirmish]', () => this.skirmish());
