@@ -4,3 +4,4 @@ dist-single
 .DS_Store
 output
 *.log
+dist-single

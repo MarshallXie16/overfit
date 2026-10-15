@@ -111,7 +111,7 @@ export class Hud {
   icon(id: string): string {
     let u = this.iconCache.get(id);
     if (u) return u;
-    const c = this.icons?.get('icon:' + id);
+    const c = this.icons?.get('icon:' + id) ?? (id === 'scrap' ? this.icons?.get('res:scrap:0') : undefined);
     if (c) u = c.toDataURL();
     else {
       const cv = document.createElement('canvas');

@@ -143,8 +143,8 @@ const spatial = await page.evaluate(async () => {
   const s = spatial;
   if (!(s['edge right (1r)'].rmsR > s['edge right (1r)'].rmsL * 2)) fail('positional: source at +1r is not panned right');
   if (!(s['left 1.5r'].rmsL > s['left 1.5r'].rmsR * 2)) fail('positional: source at −1.5r is not panned left');
-  const e = (k) => s[k].rmsL + s[k].rmsR;
-  if (!(Math.abs(e('centre') - e('edge right (1r)')) / e('centre') < 0.35)) fail('positional: not ~full volume within view');
+  const e = (k) => Math.hypot(s[k].rmsL, s[k].rmsR); // total power
+  if (!(Math.abs(e('centre') - e('edge right (1r)')) / e('centre') < 0.15)) fail(`positional: not ~full volume within view (${e('centre').toFixed(4)} vs ${e('edge right (1r)').toFixed(4)})`);
   if (!(e('2r') < e('edge right (1r)') * 0.25)) fail('positional: no distance attenuation at 2r');
   if (!(e('2.4r') < e('2r'))) fail('positional: 2.4r not quieter than 2r');
   if (s['3r (culled)'].played !== 0 || s['3r (culled)'].culled !== 1) fail('positional: 3r not culled');

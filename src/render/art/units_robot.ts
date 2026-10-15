@@ -34,6 +34,7 @@ interface LegOpts {
   lift?: number; // 0..1 (lifted legs look lighter and tucked)
   servo?: TeamPal | null;
   claw?: number;
+  armor?: boolean;
 }
 
 function leg(L: Layers, hip: Pt, foot: Pt, o: LegOpts) {
@@ -59,8 +60,26 @@ function leg(L: Layers, hip: Pt, foot: Pt, o: LegOpts) {
   vol(g, polyPath([fx - uy * cl * 0.45, fy + ux * cl * 0.45, fx + ux * cl, fy + uy * cl, fx + uy * cl * 0.45, fy - ux * cl * 0.45]),
     P.ax1, [fx - cl, fy - cl, cl * 2, cl * 2], { rim: null, ow: 0.8 });
   limb(g, [hip[0], hip[1], kx, ky], o.w, up, { hi: 0.3 + lift * 0.1 });
-  vol(g, circPath(kx, ky, o.w * 0.62), P.ax4, [kx - o.w * 0.6, ky - o.w * 0.6, o.w * 1.2, o.w * 1.2], { radial: true, hi: 0.35, rim: null, ow: 0.8 });
-  if (o.servo) light(L.e, kx, ky, o.w * 0.2, o.servo.glow, 0.7, 2.6);
+  if (o.armor) {
+    // tapered armour plate over the thigh
+    const ax = kx - hip[0], ay = ky - hip[1];
+    const al = Math.hypot(ax, ay) || 1;
+    const nx = -ay / al, ny = ax / al;
+    const w0 = o.w * 0.75, w1 = o.w * 0.95, w2 = o.w * 0.5;
+    const pts = [
+      hip[0] + ax * 0.12 + nx * w0, hip[1] + ay * 0.12 + ny * w0,
+      hip[0] + ax * 0.55 + nx * w1, hip[1] + ay * 0.55 + ny * w1,
+      hip[0] + ax * 0.92 + nx * w2, hip[1] + ay * 0.92 + ny * w2,
+      hip[0] + ax * 0.92 - nx * w2, hip[1] + ay * 0.92 - ny * w2,
+      hip[0] + ax * 0.55 - nx * w1, hip[1] + ay * 0.55 - ny * w1,
+      hip[0] + ax * 0.12 - nx * w0, hip[1] + ay * 0.12 - ny * w0,
+    ];
+    plate(g, pts, P.ax3, 2, 5 + Math.round(kx * 7 + ky), { grimeN: 0.5 });
+    groove(g, [hip[0] + ax * 0.3, hip[1] + ay * 0.3, hip[0] + ax * 0.8, hip[1] + ay * 0.8], 0.5, 1);
+  }
+  const jr = o.w * (o.armor ? 0.5 : 0.58);
+  vol(g, circPath(kx, ky, jr), P.ax3, [kx - jr, ky - jr, jr * 2, jr * 2], { radial: true, hi: 0.3, rim: CHITIN_RIM, ow: 0.8 });
+  if (o.servo) light(L.e, kx, ky, Math.min(1.3, o.w * 0.11), o.servo.glow, 0.55, 2.2);
 }
 
 const phaseOf = (f: number) => (f / 4) * TAU;
@@ -215,40 +234,42 @@ export function drawBrute(L: Layers, pal: TeamPal, f: number): void {
       const p = ph + (groupA ? 0 : Math.PI);
       const off = Math.cos(p) * 6;
       const lift = Math.max(0, -Math.sin(p));
-      leg(L, [hips[i][0], hips[i][1] * s], [feet[i][0] + off, feet[i][1] * s], { w: 7.5, knee: 7, side: sides[i], lift, servo: pal, claw: 6 });
+      leg(L, [hips[i][0], hips[i][1] * s], [feet[i][0] + off, feet[i][1] * s], { w: 7.5, knee: 7, side: sides[i], lift, servo: pal, claw: 6, armor: true });
     }
   }
-  // claws
+  // claws (big, forward)
   const sw = Math.sin(ph) * 1.5;
   for (const s of [-1, 1]) {
-    limb(g, [18, s * 18, 34, s * 31, 44 + sw, s * 22], 8, P.ax3, { hi: 0.3 });
-    vol(g, circPath(34, s * 31, 5), P.ax4, [29, s * 31 - 5, 10, 10], { radial: true, hi: 0.35, rim: null });
-    light(L.e, 34, s * 31, 1.2, pal.glow, 0.7, 2.6);
-    // pincer blades
-    const bx = 44 + sw;
-    const by = s * 22;
-    plate(g, [bx - 4, by - s * 3, bx + 9, by - s * 9, bx + 16, by - s * 3, bx + 9, by - s * 4], P.ax2, 1.5, 31 + s, { grimeN: 0 });
-    plate(g, [bx - 4, by + s * 3, bx + 8, by + s * 1, bx + 13, by + s * 6, bx + 5, by + s * 7], P.ax2, 1.5, 33 + s, { grimeN: 0 });
-    vol(g, circPath(bx, by, 5.5), P.ax3, [bx - 5.5, by - 5.5, 11, 11], { radial: true, hi: 0.3, rim: CHITIN_RIM });
+    limb(g, [16, s * 19, 34, s * 33, 47 + sw, s * 25], 8.5, P.ax3, { hi: 0.3 });
+    vol(g, circPath(34, s * 33, 5.2), P.ax3, [29, s * 33 - 5, 10, 10], { radial: true, hi: 0.3, rim: CHITIN_RIM });
+    light(L.e, 34, s * 33, 1, pal.glow, 0.5, 2.2);
+    const bx = 47 + sw;
+    const by = s * 25;
+    // upper (outer) blade
+    plate(g, [bx - 6, by - s * 2, bx + 6, by + s * 6, bx + 20, by + s * 1, bx + 25, by - s * 8, bx + 14, by - s * 3, bx + 2, by - s * 7], P.ax3, 1.5, 31 + s, { grimeN: 0 });
+    // inner blade
+    plate(g, [bx - 2, by - s * 6, bx + 10, by - s * 10, bx + 20, by - s * 12, bx + 12, by - s * 15, bx, by - s * 13], P.ax2, 1.2, 33 + s, { grimeN: 0 });
+    vol(g, circPath(bx, by, 6.2), P.ax3, [bx - 6, by - 6, 12, 12], { radial: true, hi: 0.3, rim: CHITIN_RIM });
+    groove(g, [bx + 4, by + s * 1, bx + 18, by - s * 1], 0.45, 0.8);
   }
   // ram
   plate(g, [24, -12, 42, -5.5, 48, 0, 42, 5.5, 24, 12], P.ax4, 2, 41);
   plate(g, [42, -5.5, 48, 0, 42, 5.5, 45, 0], P.ax1, 1, 42, { grimeN: 0 });
   groove(g, [30, -9, 44, -2.5], 0.4, 0.8);
   groove(g, [30, 9, 44, 2.5], 0.4, 0.8);
-  // carapace layers (rear to front)
-  plate(g, [-14, -30, -32, -22, -39, 0, -32, 22, -14, 30, -6, 0], P.ax2, 5, 51);
-  plate(g, [8, -32, -16, -31, -26, -18, -29, 0, -26, 18, -16, 31, 8, 32, 14, 0], P.ax3, 5, 52);
-  plate(g, [24, -24, 8, -31, -6, -26, -10, 0, -6, 26, 8, 31, 24, 24, 30, 10, 30, -10], mix(P.ax3, P.ax4, 0.35), 5, 53);
-  // spine ridge
-  plate(g, [24, -4, -34, -3.5, -38, 0, -34, 3.5, 24, 4, 27, 0], P.ax4, 2, 54, { grimeN: 0 });
-  for (let x = -30; x < 22; x += 7) groove(g, [x, -3.5, x, 3.5], 0.55, 0.9);
-  // glowing seams between plates
   const e = L.e;
-  glowLine(e, [8, -30, 13, -12], pal.glow, 0.8, 0.55, 3.2);
-  glowLine(e, [8, 30, 13, 12], pal.glow, 0.8, 0.55, 3.2);
-  glowLine(e, [-16, -29, -11, -12], pal.glow, 0.8, 0.45, 3.2);
-  glowLine(e, [-16, 29, -11, 12], pal.glow, 0.8, 0.45, 3.2);
+  // carapace: three overlapping transverse plates (rear -> front)
+  const P1 = [-6, -29, -22, -28, -34, -18, -39, 0, -34, 18, -22, 28, -6, 29, -12, 0];
+  const P2 = [10, -32, -8, -32, -21, -23, -25, 0, -21, 23, -8, 32, 10, 32, 4, 0];
+  const P3 = [24, -25, 10, -32, -1, -27, -7, 0, -1, 27, 10, 32, 24, 25, 30, 10, 30, -10];
+  plate(g, P1, P.ax2, 5, 51);
+  plate(g, P2, mix(P.ax2, P.ax3, 0.6), 5, 52);
+  glowLine(e, [-8, -31, -20, -23, -24, 0, -20, 23, -8, 31], pal.glow, 0.9, 0.5, 3.5);
+  plate(g, P3, mix(P.ax3, P.ax4, 0.3), 5, 53);
+  glowLine(e, [9, -31, -0.5, -26.5, -6, 0, -0.5, 26.5, 9, 31], pal.glow, 0.9, 0.55, 3.5);
+  // dorsal ridge (short, tapered)
+  plate(g, [20, -3, -2, -4.5, -20, -3.5, -30, 0, -20, 3.5, -2, 4.5, 20, 3], P.ax4, 2, 54, { grimeN: 0 });
+  for (const x of [-18, -8, 2, 12]) groove(g, [x, -3.2, x, 3.2], 0.55, 0.9);
   // rear vents
   for (let i = -1; i <= 1; i++) {
     vol(g, rrPath(-36, i * 6 - 1.6, 7, 3.2, 1), '#14070a', [-36, i * 6 - 1.6, 7, 3.2], { rim: null, ow: 0.6 });
@@ -258,7 +279,7 @@ export function drawBrute(L: Layers, pal: TeamPal, f: number): void {
   for (const [x, y, r] of [[27, -7.5, 1.2], [29.5, -3.6, 1.5], [29.5, 3.6, 1.5], [27, 7.5, 1.2]] as const) {
     light(e, x, y, r, pal.glow, 1, 2.8);
   }
-  rivets(g, [18, -20, 18, 20, 0, -27, 0, 27], 1, P.ax4);
+  rivets(g, [16, -22, 16, 22, 2, -28, 2, 28], 1, P.ax4);
   hackMark(L, pal, -24, 0, 5);
 }
 
@@ -315,9 +336,10 @@ function waspBody(L: Layers, pal: TeamPal, f: number, shadowOnly = false) {
       return;
     }
     const disc = g.createRadialGradient(x, y, 2, x, y, 10.8);
-    disc.addColorStop(0, 'rgba(150,160,175,0.22)');
-    disc.addColorStop(0.85, 'rgba(150,160,175,0.12)');
-    disc.addColorStop(1, 'rgba(190,200,215,0.3)');
+    disc.addColorStop(0, 'rgba(160,170,185,0.32)');
+    disc.addColorStop(0.8, 'rgba(150,160,175,0.18)');
+    disc.addColorStop(0.92, 'rgba(200,210,225,0.42)');
+    disc.addColorStop(1, 'rgba(200,210,225,0.1)');
     g.fillStyle = disc;
     g.beginPath();
     g.arc(x, y, 10.8, 0, TAU);
@@ -332,6 +354,14 @@ function waspBody(L: Layers, pal: TeamPal, f: number, shadowOnly = false) {
       g.lineTo(x + Math.cos(a) * 10, y + Math.sin(a) * 10);
       g.strokeStyle = `rgba(25,28,33,${al})`;
       g.lineWidth = 2 - k * 0.25;
+      g.stroke();
+    }
+    // light motion-blur arcs
+    for (const off of [0, Math.PI]) {
+      g.beginPath();
+      g.arc(x, y, 8.4, a0 + off - 0.9, a0 + off);
+      g.strokeStyle = 'rgba(210,220,230,0.28)';
+      g.lineWidth = 1.6;
       g.stroke();
     }
     vol(g, circPath(x, y, 2.6), P.ax4, [x - 2.6, y - 2.6, 5.2, 5.2], { radial: true, hi: 0.4, ow: 0.8 });
@@ -470,7 +500,7 @@ export function drawColossus(L: Layers, pal: TeamPal, f: number): void {
       const p = ph + i * (Math.PI / 2) + (s < 0 ? Math.PI : 0);
       const off = Math.cos(p) * 9;
       const lift = Math.max(0, -Math.sin(p));
-      leg(L, [hips[i][0], hips[i][1] * s], [feet[i][0] + off, feet[i][1] * s], { w: 13, knee: 15, side: sides[i], lift, servo: pal, claw: 10 });
+      leg(L, [hips[i][0], hips[i][1] * s], [feet[i][0] + off, feet[i][1] * s], { w: 12, knee: 15, side: sides[i], lift, servo: pal, claw: 11, armor: true });
     }
   }
   // abdomen

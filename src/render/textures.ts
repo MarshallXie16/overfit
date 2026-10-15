@@ -78,9 +78,13 @@ export class TextureBank {
   }
 
   /** Coloured placeholder so missing art never crashes the game. */
+  /** keys requested but missing from the atlas (debug aid) */
+  missing = new Set<string>();
+
   private fallback(key: string): TexInfo {
     let f = this.fallbacks.get(key);
     if (f) return f;
+    this.missing.add(key);
     const c = document.createElement('canvas');
     let size = 48;
     const m = /^bld:([a-z_]+)/.exec(key);

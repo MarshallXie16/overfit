@@ -77,7 +77,7 @@ export class AudioEngine {
   private lr = 20;
   private hasListener = false;
   private voices: Voice[] = [];
-  private lastStart = new Map<string, number>();
+  private lastStart = new Map<string, { t: number; g: number }>();
   private lastVariant = new Map<string, number>();
   private tokens = BUDGET_BURST;
   private tokenTime = 0;
@@ -267,8 +267,10 @@ export class AudioEngine {
 
     const now = this.clock();
     const prio = def.priority ?? 1;
+    // per-name rate limit; a much louder (closer) request may still get through
+    // so distant spam can't mask on-screen action
     const last = this.lastStart.get(name);
-    if (last !== undefined && (now - last) * 1000 < def.minMs) {
+    if (last !== undefined && (now - last.t) * 1000 < def.minMs && !(gain > last.g * 2.5 && (now - last.t) * 1000 >= def.minMs * 0.25)) {
       this.stats.dropped++;
       return;
     }
@@ -336,12 +338,17 @@ export class AudioEngine {
     const src = ctx.createBufferSource();
     src.buffer = buf;
     src.playbackRate.value = rate;
+    const usePan = positional && Math.abs(pan) > 0.02;
     const g = ctx.createGain();
-    g.gain.value = gain * (0.9 + Math.random() * 0.15);
+    // For mono input StereoPanner is equal-power (0.707 per side at centre) while
+    // an unpanned mono voice upmixes at 1.0 per side: compensate so power is
+    // constant across the field. Stereo input is a balance control (unity at 0).
+    const panComp = usePan && buf.numberOfChannels === 1 ? Math.SQRT2 : 1;
+    g.gain.value = gain * (0.9 + Math.random() * 0.15) * panComp;
     src.connect(g);
     let p: StereoPannerNode | null = null;
     let tail: AudioNode = g;
-    if (positional && Math.abs(pan) > 0.02) {
+    if (usePan) {
       p = ctx.createStereoPanner();
       p.pan.value = pan;
       g.connect(p);
@@ -355,7 +362,7 @@ export class AudioEngine {
     src.onended = (): void => this.release(voice);
     src.start(at);
     this.voices.push(voice);
-    this.lastStart.set(name, now);
+    this.lastStart.set(name, { t: now, g: gain });
     this.tokens -= 1;
     this.stats.played++;
     if (this.voices.length > this.stats.peakVoices) this.stats.peakVoices = this.voices.length;

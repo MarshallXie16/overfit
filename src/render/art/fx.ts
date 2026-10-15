@@ -1,5 +1,6 @@
 // Effects, decals, scrap piles, wrecks, scaffolding, AXIOM creep pattern.
-import { P, AXIOM_PAL } from './palette';
+import { P, AXIOM_PAL, type TeamPal } from './palette';
+import { ROBOT_CANVAS, drawSkitter, drawSapper, drawGunner, drawLancer, drawBrute } from './units_robot';
 import { renderSprite, type Layers } from './sprite';
 import { drum, regular, scrapBits, tyre } from './kit';
 import {
@@ -346,26 +347,36 @@ function fxCreepPattern(): HTMLCanvasElement {
   const r = mulberry32(2024);
   const cell = 16;
   const N = S / cell;
-  // faint territorial tint so the pattern reads as a field, not just lines
-  g.fillStyle = 'rgba(120,10,30,0.10)';
+  // faint territorial stain so the Grid reads as a field, not just lines
+  const r2 = mulberry32(77);
+  for (let k = 0; k < 14; k++) {
+    const x = r2() * S, y = r2() * S, rad = 30 + r2() * 50;
+    wrapDraw(g, S, (ox, oy) => {
+      const gr = g.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, rad);
+      gr.addColorStop(0, 'rgba(70,6,18,0.10)');
+      gr.addColorStop(1, 'rgba(70,6,18,0)');
+      g.fillStyle = gr;
+      g.fillRect(x + ox - rad, y + oy - rad, rad * 2, rad * 2);
+    });
+  }
+  g.fillStyle = 'rgba(50,4,12,0.10)';
   g.fillRect(0, 0, S, S);
-  const traces: number[][] = [];
-  for (let k = 0; k < 34; k++) {
+  const traces: { pts: number[]; lit: boolean; w: number }[] = [];
+  for (let k = 0; k < 24; k++) {
     let x = Math.floor(r() * N), y = Math.floor(r() * N);
     const pts = [x * cell, y * cell];
-    let dir = Math.floor(r() * 8);
-    const n = 3 + Math.floor(r() * 6);
-    for (let s = 0; s < n; s++) {
+    let dir = Math.floor(r() * 4) * 2;
+    const n = 2 + Math.floor(r() * 4);
+    for (let s2 = 0; s2 < n; s2++) {
       const dx = [1, 1, 0, -1, -1, -1, 0, 1][dir];
       const dy = [0, 1, 1, 1, 0, -1, -1, -1][dir];
-      const len = 1 + Math.floor(r() * 3);
+      const len = 1 + Math.floor(r() * (dir % 2 ? 2 : 4));
       x += dx * len;
       y += dy * len;
       pts.push(x * cell, y * cell);
-      dir = (dir + (r() < 0.5 ? 1 : 7) + (r() < 0.3 ? 0 : 0)) % 8;
-      if (dir % 2 === 1 && r() < 0.5) dir = (dir + 1) % 8;
+      dir = (dir + (r() < 0.5 ? 1 : 7)) % 8;
     }
-    traces.push(pts);
+    traces.push({ pts, lit: r() < 0.4, w: r() < 0.25 ? 2.4 : 1.4 });
   }
   const stroke = (pts: number[], ox: number, oy: number, col: string, w: number) => {
     g.beginPath();
@@ -377,41 +388,43 @@ function fxCreepPattern(): HTMLCanvasElement {
     g.lineCap = 'round';
     g.stroke();
   };
-  for (const pts of traces) wrapDraw(g, S, (ox, oy) => stroke(pts, ox, oy, 'rgba(40,4,12,0.75)', 4.5));
-  for (const pts of traces) wrapDraw(g, S, (ox, oy) => stroke(pts, ox, oy, 'rgba(150,16,44,0.85)', 2));
-  for (const pts of traces) wrapDraw(g, S, (ox, oy) => stroke(pts, ox, oy, 'rgba(255,60,90,0.5)', 0.8));
-  // vias / pads
-  for (const pts of traces) {
-    for (const idx of [0, pts.length - 2]) {
-      const x = pts[idx], y = pts[idx + 1];
+  for (const t of traces) wrapDraw(g, S, (ox, oy) => stroke(t.pts, ox, oy, 'rgba(18,2,6,0.55)', t.w + 2.4));
+  for (const t of traces) wrapDraw(g, S, (ox, oy) => stroke(t.pts, ox, oy, 'rgba(112,12,34,0.8)', t.w));
+  for (const t of traces) if (t.lit) wrapDraw(g, S, (ox, oy) => stroke(t.pts, ox, oy, 'rgba(255,58,92,0.5)', 0.7));
+  // vias at trace ends
+  for (const t of traces) {
+    for (const idx of [0, t.pts.length - 2]) {
+      const x = t.pts[idx], y = t.pts[idx + 1];
       wrapDraw(g, S, (ox, oy) => {
         g.beginPath();
-        g.arc(x + ox, y + oy, 3.6, 0, TAU);
-        g.fillStyle = 'rgba(30,3,10,0.9)';
+        g.arc(x + ox, y + oy, 2.6, 0, TAU);
+        g.fillStyle = 'rgba(22,2,7,0.85)';
         g.fill();
-        g.lineWidth = 1.4;
-        g.strokeStyle = 'rgba(220,40,70,0.85)';
+        g.lineWidth = 1;
+        g.strokeStyle = t.lit ? 'rgba(230,40,72,0.8)' : 'rgba(140,16,40,0.8)';
         g.stroke();
-        g.beginPath();
-        g.arc(x + ox, y + oy, 1.2, 0, TAU);
-        g.fillStyle = 'rgba(255,120,140,0.9)';
-        g.fill();
+        if (t.lit) {
+          g.beginPath();
+          g.arc(x + ox, y + oy, 0.9, 0, TAU);
+          g.fillStyle = 'rgba(255,120,140,0.9)';
+          g.fill();
+        }
       });
     }
   }
-  // chip pads
-  for (let k = 0; k < 5; k++) {
+  // a couple of chip pads
+  for (let k = 0; k < 2; k++) {
     const x = Math.floor(r() * N) * cell + cell / 2, y = Math.floor(r() * N) * cell + cell / 2;
     wrapDraw(g, S, (ox, oy) => {
-      g.fillStyle = 'rgba(25,4,9,0.85)';
-      g.fillRect(x + ox - 7, y + oy - 7, 14, 14);
-      g.strokeStyle = 'rgba(200,30,60,0.7)';
+      g.fillStyle = 'rgba(20,3,7,0.8)';
+      g.fillRect(x + ox - 6, y + oy - 6, 12, 12);
+      g.strokeStyle = 'rgba(150,20,46,0.75)';
       g.lineWidth = 1;
-      g.strokeRect(x + ox - 7, y + oy - 7, 14, 14);
-      for (let p = -5; p <= 5; p += 3.3) {
-        g.fillStyle = 'rgba(200,30,60,0.7)';
-        g.fillRect(x + ox + p - 0.5, y + oy - 10, 1, 3);
-        g.fillRect(x + ox + p - 0.5, y + oy + 7, 1, 3);
+      g.strokeRect(x + ox - 6, y + oy - 6, 12, 12);
+      for (let p = -4; p <= 4; p += 2.7) {
+        g.fillStyle = 'rgba(150,20,46,0.7)';
+        g.fillRect(x + ox + p - 0.5, y + oy - 9, 1, 3);
+        g.fillRect(x + ox + p - 0.5, y + oy + 6, 1, 3);
       }
     });
   }
@@ -611,83 +624,106 @@ function resScrap(v: number): HTMLCanvasElement {
   }, { shadow: { dx: 3, dy: 4, blur: 4, a: 0.5 }, mid: true, outline: 1.1 });
 }
 
-function charred(g: G, path: (g: G) => void, bb: [number, number, number, number], seed: number): void {
-  const r = mulberry32(seed);
-  const [x, y, w, h] = bb;
-  g.save();
-  path(g);
-  g.clip();
-  for (let k = 0; k < 6; k++) {
-    const cx = x + r() * w, cy = y + r() * h, rr = 3 + r() * Math.max(w, h) * 0.35;
-    const gr = g.createRadialGradient(cx, cy, 0, cx, cy, rr);
-    gr.addColorStop(0, 'rgba(5,4,3,0.7)');
-    gr.addColorStop(1, 'rgba(5,4,3,0)');
-    g.fillStyle = gr;
-    g.fillRect(cx - rr, cy - rr, rr * 2, rr * 2);
-  }
-  g.restore();
-}
+const DEAD: TeamPal = { glow: '#3a1209', glow2: '#2a0d07', hot: '#5a2410', mark: '#000000', hacked: false };
 
 function wreck(size: 'small' | 'medium' | 'large', v: number): HTMLCanvasElement {
-  const S = size === 'small' ? 1 : size === 'medium' ? 1.7 : 2.9;
-  const cs = Math.ceil((size === 'small' ? 72 : size === 'medium' ? 112 : 184));
+  const S = size === 'small' ? 1 : size === 'medium' ? 1.6 : 2.5;
+  const cs = size === 'small' ? 80 : size === 'medium' ? 120 : 176;
+  const choices: Record<string, [(L: Layers, p: TeamPal, f: number) => void, string][]> = {
+    small: [[drawSkitter, 'skitter'], [drawSapper, 'sapper']],
+    medium: [[drawGunner, 'gunner'], [drawLancer, 'lancer']],
+    large: [[drawBrute, 'brute'], [drawBrute, 'brute']],
+  };
+  const [draw, kind] = choices[size][v];
+  const r = mulberry32(800 + v * 7 + Math.round(S * 10));
+  const bs = ROBOT_CANVAS[kind];
+  const body = renderSprite(bs, bs, (L) => draw(L, DEAD, 1 + v * 2), { shadow: null, outline: 1.2 });
+  // char, heat-tint and break the carcass
+  const t = makeCanvas(bs, bs);
+  const tg = ctxOf(t);
+  tg.drawImage(body, 0, 0);
+  tg.globalCompositeOperation = 'source-atop';
+  tg.fillStyle = 'rgba(26,18,12,0.42)';
+  tg.fillRect(0, 0, bs, bs);
+  for (let k = 0; k < 7; k++) {
+    const x = bs / 2 + (r() - 0.5) * bs * 0.6, y = bs / 2 + (r() - 0.5) * bs * 0.6, rad = bs * (0.08 + r() * 0.16);
+    const gr = tg.createRadialGradient(x, y, 0, x, y, rad);
+    const heat = r() < 0.35;
+    gr.addColorStop(0, heat ? 'rgba(120,52,22,0.35)' : 'rgba(4,3,2,0.65)');
+    gr.addColorStop(1, 'rgba(4,3,2,0)');
+    tg.fillStyle = gr;
+    tg.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+  }
+  tg.globalCompositeOperation = 'destination-out';
+  const cuts = 2 + Math.floor(r() * 3);
+  for (let k = 0; k < cuts; k++) {
+    const a = r() * TAU;
+    const d = bs * (0.28 + r() * 0.18);
+    const cx = bs / 2 + Math.cos(a) * d, cy = bs / 2 + Math.sin(a) * d;
+    const rad = bs * (0.1 + r() * 0.1);
+    tg.beginPath();
+    for (let i = 0; i < 7; i++) {
+      const aa = (i / 7) * TAU;
+      const rr = rad * (0.5 + r() * 0.7);
+      if (i === 0) tg.moveTo(cx + Math.cos(aa) * rr, cy + Math.sin(aa) * rr);
+      else tg.lineTo(cx + Math.cos(aa) * rr, cy + Math.sin(aa) * rr);
+    }
+    tg.closePath();
+    tg.fill();
+  }
+  // a crack straight through
+  tg.beginPath();
+  let px = bs * (0.3 + r() * 0.1), py = bs * (0.25 + r() * 0.5);
+  tg.moveTo(px, py);
+  for (let i = 0; i < 5; i++) {
+    px += bs * 0.09;
+    py += (r() - 0.5) * bs * 0.12;
+    tg.lineTo(px, py);
+  }
+  tg.lineWidth = 1.6 * S;
+  tg.stroke();
+  const rot = r() * TAU;
   return renderSprite(cs, cs, (L) => {
     const { p, m, b, e } = L;
-    const r = mulberry32(800 + v * 7 + Math.round(S * 10));
     // scorch on the ground
     const gr = p.createRadialGradient(0, 0, 0, 0, 0, 30 * S);
-    gr.addColorStop(0, 'rgba(8,6,5,0.65)');
-    gr.addColorStop(0.6, 'rgba(10,8,6,0.35)');
+    gr.addColorStop(0, 'rgba(8,6,5,0.6)');
+    gr.addColorStop(0.6, 'rgba(10,8,6,0.3)');
     gr.addColorStop(1, 'rgba(10,8,6,0)');
     p.fillStyle = gr;
     p.fillRect(-32 * S, -32 * S, 64 * S, 64 * S);
-    g2(p, S, r);
-    // torn legs scattered
-    const nl = 3 + Math.floor(r() * 3);
-    for (let k = 0; k < nl; k++) {
-      const a = r() * TAU;
-      const d = (10 + r() * 10) * S;
-      const x = Math.cos(a) * d, y = Math.sin(a) * d;
-      const a2 = a + (r() - 0.5) * 1.5;
-      const len = (8 + r() * 8) * S;
-      limb(m, [x, y, x + Math.cos(a2) * len, y + Math.sin(a2) * len], (1.8 + r()) * S, '#26282b', { hi: 0.18 });
-    }
-    // carapace fragments
+    soot(p, S, r);
+    // loose fragments and severed limbs
     const nf = 3 + Math.floor(r() * 3);
     for (let k = 0; k < nf; k++) {
       const a = r() * TAU;
-      const d = r() * 9 * S;
+      const d = (13 + r() * 9) * S;
       const x = Math.cos(a) * d, y = Math.sin(a) * d;
-      const rad = (5 + r() * 6) * S;
-      const pts: number[] = [];
-      const nn = 5;
-      for (let i = 0; i < nn; i++) {
-        const aa = (i / nn) * TAU + r() * 0.6;
-        const rr = rad * (0.55 + r() * 0.5);
-        pts.push(x + Math.cos(aa) * rr, y + Math.sin(aa) * rr);
+      if (r() < 0.5) {
+        const a2 = a + (r() - 0.5) * 2;
+        const len = (5 + r() * 6) * S;
+        limb(m, [x, y, x + Math.cos(a2) * len, y + Math.sin(a2) * len], (1.6 + r() * 1.2) * Math.sqrt(S), '#27292c', { hi: 0.16 });
+      } else {
+        const rad = (2.5 + r() * 3) * Math.sqrt(S);
+        const pts: number[] = [];
+        for (let i = 0; i < 5; i++) {
+          const aa = (i / 5) * TAU + r() * 0.6;
+          pts.push(x + Math.cos(aa) * rad * (0.6 + r() * 0.5), y + Math.sin(aa) * rad * (0.6 + r() * 0.5));
+        }
+        vol(m, roundPolyPath(pts, 0.8), mix(P.ax3, '#2a1f18', r() * 0.6), [x - rad, y - rad, rad * 2, rad * 2], { hi: 0.18, rim: 'rgba(170,180,190,0.25)', ow: 0.8 });
       }
-      const path = roundPolyPath(pts, 1.2);
-      vol(b, path, mix(P.ax3, '#2a1f18', r() * 0.6), [x - rad, y - rad, rad * 2, rad * 2], { hi: 0.18, rim: 'rgba(170,180,190,0.25)' });
-      charred(b, path, [x - rad, y - rad, rad * 2, rad * 2], 900 + k + v * 10);
-      groove(b, [x - rad * 0.5, y, x + rad * 0.5, y + rad * 0.2], 0.5, 0.8);
     }
-    // exposed wiring
-    for (let k = 0; k < 3; k++) {
-      const x = (r() - 0.5) * 12 * S, y = (r() - 0.5) * 12 * S;
-      b.beginPath();
-      b.moveTo(x, y);
-      b.quadraticCurveTo(x + (r() - 0.5) * 14 * S, y + (r() - 0.5) * 14 * S, x + (r() - 0.5) * 18 * S, y + (r() - 0.5) * 18 * S);
-      b.strokeStyle = ['#7a3a22', '#2c4f6e', '#8a7a2e'][k];
-      b.lineWidth = 0.9;
-      b.stroke();
-    }
-    // embers and a dying optic
-    for (let k = 0; k < 4 + S * 2; k++) light(e, (r() - 0.5) * 22 * S, (r() - 0.5) * 22 * S, 0.7, '#ff7a2a', 0.55 + r() * 0.3, 3);
-    light(e, (r() - 0.5) * 8 * S, (r() - 0.5) * 8 * S, 1.1 * Math.sqrt(S), AXIOM_PAL.glow, 0.35, 2.4);
-  }, { shadow: { dx: 2, dy: 3, blur: 3, a: 0.5 }, mid: true, outline: 1 });
+    b.save();
+    b.rotate(rot);
+    b.drawImage(t, -bs / 2, -bs / 2);
+    b.restore();
+    // embers + a dying optic
+    for (let k = 0; k < 4 + S * 3; k++) light(e, (r() - 0.5) * 22 * S, (r() - 0.5) * 22 * S, 0.7, '#ff7a2a', 0.45 + r() * 0.35, 3);
+    light(e, Math.cos(rot) * 6 * S, Math.sin(rot) * 6 * S, 1.1 * Math.sqrt(S), AXIOM_PAL.glow, 0.3, 2.4);
+  }, { shadow: { dx: 2, dy: 3, blur: 3, a: 0.5 }, mid: true, outline: 0.8 });
 }
 
-function g2(p: G, S: number, r: () => number): void {
+function soot(p: G, S: number, r: () => number): void {
   // soot streaks radiating
   for (let k = 0; k < 10; k++) {
     const a = r() * TAU;

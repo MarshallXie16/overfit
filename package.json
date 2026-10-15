@@ -9,7 +9,8 @@
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run",
-    "sim": "tsx tools/headless.ts"
+    "sim": "tsx tools/headless.ts",
+    "build:single": "vite build --config vite.single.config.ts"
   },
   "dependencies": {
     "@fontsource/chakra-petch": "^5.3.0",
@@ -22,6 +23,7 @@
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
+    "vite-plugin-singlefile": "^2.3.3",
     "vitest": "^5.0.4"
   }
 }
