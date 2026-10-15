@@ -84,6 +84,7 @@ class App {
     audio.setVolumes({ master: s.master, sfx: s.sfx, music: s.music });
     if (this.session?.ctl) this.session.ctl.edgeScroll = s.edgeScroll;
     if (this.session) this.session.r.fx.quality = s.quality;
+    if (this.session?.advisor) this.session.advisor.enabled = s.advisor;
     if (s.showFps && !this.fpsEl) {
       this.fpsEl = document.createElement('div');
       this.fpsEl.style.cssText = 'position:fixed;left:236px;bottom:4px;z-index:40;font:11px JetBrains Mono,monospace;color:#7d8f8c;pointer-events:none';

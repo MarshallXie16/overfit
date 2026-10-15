@@ -125,6 +125,32 @@ for (const [k, m] of Object.entries(mixes)) {
   if (!(m.rms > 0.01)) fail(`mix ${k}: silent (rms ${m.rms})`);
 }
 
+// ------------------------------------------------- 3b. positional + pause
+const spatial = await page.evaluate(async () => {
+  const T = window.__audioTest;
+  const at = (x, y) => T.renderMixOffline({ seconds: 1.4, plays: [{ at: 0.5, name: 'explosion_small', x, y }] });
+  const out = {};
+  for (const [k, x, y] of [['centre', 0, 0], ['edge right (1r)', 20, 0], ['left 1.5r', -30, 0], ['2r', 40, 0], ['2.4r', 0, 48], ['3r (culled)', 60, 0]]) {
+    const m = await at(x, y);
+    out[k] = { rmsL: m.rmsL, rmsR: m.rmsR, played: m.played, culled: m.culled };
+  }
+  const base = { seconds: 6, music: 'game', intensity: 0.9, musicSeed: 11 };
+  out.music = await T.renderMixOffline(base);
+  out.musicPaused = await T.renderMixOffline({ ...base, pausedAt: [[0, true]] });
+  return out;
+});
+{
+  const s = spatial;
+  if (!(s['edge right (1r)'].rmsR > s['edge right (1r)'].rmsL * 2)) fail('positional: source at +1r is not panned right');
+  if (!(s['left 1.5r'].rmsL > s['left 1.5r'].rmsR * 2)) fail('positional: source at −1.5r is not panned left');
+  const e = (k) => s[k].rmsL + s[k].rmsR;
+  if (!(Math.abs(e('centre') - e('edge right (1r)')) / e('centre') < 0.35)) fail('positional: not ~full volume within view');
+  if (!(e('2r') < e('edge right (1r)') * 0.25)) fail('positional: no distance attenuation at 2r');
+  if (!(e('2.4r') < e('2r'))) fail('positional: 2.4r not quieter than 2r');
+  if (s['3r (culled)'].played !== 0 || s['3r (culled)'].culled !== 1) fail('positional: 3r not culled');
+  if (!(s.musicPaused.highFrac < s.music.highFrac * 0.3 && s.musicPaused.lufs < s.music.lufs - 4)) fail('pause: music not muffled/ducked');
+}
+
 // --------------------------------------------------------- 4. offline music
 const music = await page.evaluate(async () => {
   const T = window.__audioTest;
@@ -174,13 +200,19 @@ await page.waitForTimeout(5000);
 const liveB = await page.evaluate(() => {
   const T = window.__audioTest;
   const a = T.audio._tapOutput();
-  return new Promise((res) => setTimeout(() => {
-    const buf = new Float32Array(a.fftSize);
-    a.getFloatTimeDomainData(buf);
-    let acc = 0, pk = 0;
-    for (const v of buf) { acc += v * v; pk = Math.max(pk, Math.abs(v)); }
-    res({ dbg: T.audio._debug(), ms: { ...T.audio.musicStats }, outRms: Math.sqrt(acc / buf.length), outPeak: pk, stats: { ...T.audio.stats } });
-  }, 300));
+  const buf = new Float32Array(a.fftSize);
+  let acc = 0, n = 0, pk = 0;
+  return new Promise((res) => {
+    const iv = setInterval(() => {
+      a.getFloatTimeDomainData(buf);
+      for (const v of buf) { acc += v * v; pk = Math.max(pk, Math.abs(v)); }
+      n += buf.length;
+      if (n >= buf.length * 25) {
+        clearInterval(iv);
+        res({ dbg: T.audio._debug(), ms: { ...T.audio.musicStats }, outRms: Math.sqrt(acc / n), outPeak: pk, stats: { ...T.audio.stats } });
+      }
+    }, 40);
+  });
 });
 const liveSecs = liveB.dbg.time - liveA.dbg.time;
 const liveSteps = liveB.ms.steps - liveA.ms.steps;
@@ -212,7 +244,13 @@ for (const [k, m] of Object.entries({ ...mixes, ...music })) {
   console.log(`  ${k.padEnd(20)} peak ${f(m.peak)} rms ${f(m.rms, 4)} LUFS ${f(m.lufs, 1)} maxVoices ${m.maxVoices} played ${m.played} dropped ${m.dropped} culled ${m.culled} stolen ${m.stolen} steps ${m.musicSteps} notes ${m.musicNotes} sections ${m.musicSections} errors ${m.errors} (${Math.round(m.renderMs)} ms)`);
   if ((k.startsWith('game') || k === 'menu') && k !== 'game long') console.log(`  ${''.padEnd(20)} LUFS/0.5s: ${m.windowLufs.map((x) => x.toFixed(0)).join(' ')}`);
 }
-console.log(`\nLive: ctx ${live0.state} @ ${live0.sampleRate} Hz, bank ${live0.bankSounds} sounds`);
+console.log('\nPositional (explosion_small, listener r=20 tiles):');
+for (const [k, v] of Object.entries(spatial)) {
+  if (k.startsWith('music')) continue;
+  console.log(`  ${k.padEnd(16)} rmsL ${f(v.rmsL, 4)} rmsR ${f(v.rmsR, 4)} played ${v.played} culled ${v.culled}`);
+}
+console.log(`  pause muffle: music ${f(spatial.music.lufs, 1)} LUFS, >2k ${f(spatial.music.highFrac * 100, 1)}%  →  paused ${f(spatial.musicPaused.lufs, 1)} LUFS, >2k ${f(spatial.musicPaused.highFrac * 100, 2)}%`);
+console.log(`\nLive: ctx ${live0.state} @ ${live0.sampleRate} Hz, bank ${live0.bankSounds} sounds / ${(liveB.dbg.bankBytes / 1048576).toFixed(1)} MB`);
 console.log(`  burst: ${JSON.stringify(liveBurst)}`);
 console.log(`  game music 5 s: clock +${f(liveSecs, 2)} s, steps +${liveSteps}, notes ${liveB.ms.notes}, sections ${liveB.ms.sections}, errors ${liveB.ms.errors}, out rms ${f(liveB.outRms, 4)} peak ${f(liveB.outPeak)}`);
 

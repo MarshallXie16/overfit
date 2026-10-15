@@ -507,9 +507,12 @@ export class AudioEngine {
   }
 
   /** @internal Diagnostics for the preview page / audio check. */
-  _debug(): { state: string; time: number; voices: number; sampleRate: number; bankSounds: number } {
+  _debug(): { state: string; time: number; voices: number; sampleRate: number; bankSounds: number; bankBytes: number } {
     const ctx = this.ctx;
+    let bankBytes = 0;
+    if (this.bank) for (const arr of this.bank.values()) for (const b of arr) bankBytes += b.length * b.numberOfChannels * 4;
     return {
+      bankBytes,
       state: this.disabled ? 'disabled' : ctx ? (this.live ? this.live.state : 'offline') : 'uninitialised',
       time: ctx ? ctx.currentTime : 0,
       voices: this.voices.length,

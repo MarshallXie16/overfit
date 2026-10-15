@@ -66,12 +66,19 @@ export interface MixOptions {
   intensityAt?: Array<[number, number]>;
   musicSeed?: number;
   stingerAt?: Array<[number, 'surge' | 'victory' | 'defeat' | 'epoch']>;
+  pausedAt?: Array<[number, boolean]>;
+  /** Listener [x, y, viewRadius] (default 0, 0, 20). */
+  listener?: [number, number, number];
 }
 
 export interface MixResult {
   seconds: number;
   peak: number;
   rms: number;
+  rmsL: number;
+  rmsR: number;
+  /** Energy fraction above 2 kHz (for muffle checks). */
+  highFrac: number;
   /** RMS per 0.5 s window */
   windowRms: number[];
   /** Ungated K-weighted loudness (LUFS-like) after the first second. */
@@ -97,7 +104,8 @@ export async function renderMixOffline(o: MixOptions): Promise<MixResult> {
   const ctx = new OfflineAudioContext(2, Math.ceil(o.seconds * sr), sr);
   const eng = new AudioEngine();
   eng._attachOffline(ctx, bank, o.musicSeed ?? 1234);
-  eng.setListener(0, 0, 20);
+  const [lx, ly, lr] = o.listener ?? [0, 0, 20];
+  eng.setListener(lx, ly, lr);
   eng.setIntensity(o.intensity ?? 0);
   if (o.music) eng.music(o.music);
 
@@ -120,9 +128,11 @@ export async function renderMixOffline(o: MixOptions): Promise<MixResult> {
   plays.sort((a, b) => a.at - b.at);
   const ints = [...(o.intensityAt ?? [])].sort((a, b) => a[0] - b[0]);
   const stings = [...(o.stingerAt ?? [])].sort((a, b) => a[0] - b[0]);
+  const pauses = [...(o.pausedAt ?? [])].sort((a, b) => a[0] - b[0]);
 
-  let pi = 0, ii = 0, si = 0, errors = 0, maxVoices = 0;
+  let pi = 0, ii = 0, si = 0, pz = 0, errors = 0, maxVoices = 0;
   const tick = (now: number): void => {
+    while (pz < pauses.length && pauses[pz][0] <= now + 1e-9) eng.setPaused(pauses[pz++][1]);
     while (ii < ints.length && ints[ii][0] <= now + 1e-9) eng.setIntensity(ints[ii++][1]);
     while (si < stings.length && stings[si][0] <= now + 1e-9) eng.stinger(stings[si++][1]);
     while (pi < plays.length && plays[pi].at <= now + 1e-9) {
@@ -158,7 +168,7 @@ export async function renderMixOffline(o: MixOptions): Promise<MixResult> {
 
   const l = out.getChannelData(0);
   const r = out.getChannelData(1);
-  let peak = 0, acc = 0;
+  let peak = 0, acc = 0, accL = 0, accR = 0;
   const windowRms: number[] = [];
   const win = Math.round(0.5 * sr);
   let wacc = 0, wn = 0;
@@ -167,6 +177,8 @@ export async function renderMixOffline(o: MixOptions): Promise<MixResult> {
     const m = Math.max(Math.abs(a), Math.abs(b));
     if (m > peak) peak = m;
     const e = (a * a + b * b) / 2;
+    accL += a * a;
+    accR += b * b;
     acc += e;
     wacc += e;
     if (++wn === win) {
@@ -177,11 +189,16 @@ export async function renderMixOffline(o: MixOptions): Promise<MixResult> {
   }
   if (wn > 0) windowRms.push(Math.sqrt(wacc / wn));
   const kw = kWeighted([l, r], sr);
+  const hp2k = highPass(sr, 2000, 0.7071);
+  const hiE = [l, r].reduce((s, c) => s + biquad(biquad(c, hp2k), hp2k).reduce((x, v) => x + v * v, 0), 0);
   const ms = eng.musicStats;
   return {
     seconds: o.seconds,
     peak,
     rms: Math.sqrt(acc / l.length),
+    rmsL: Math.sqrt(accL / l.length),
+    rmsR: Math.sqrt(accR / l.length),
+    highFrac: hiE / Math.max(1e-12, accL + accR),
     windowRms,
     lufs: kw.lufs,
     windowLufs: kw.windows,

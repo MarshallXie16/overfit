@@ -149,6 +149,7 @@ export class Menus {
       <label class="set">Music volume<input type="range" min="0" max="1" step="0.05" data-s="music" value="${s.music}"></label>
       <label class="set">Effects quality<input type="range" min="0.3" max="1" step="0.1" data-s="quality" value="${s.quality}"></label>
       <label class="set">Edge scrolling<input type="checkbox" data-s="edgeScroll" ${s.edgeScroll ? 'checked' : ''}></label>
+      <label class="set">Advisor tips (skirmish/endless)<input type="checkbox" data-s="advisor" ${s.advisor ? 'checked' : ''}></label>
       <label class="set">Show FPS<input type="checkbox" data-s="showFps" ${s.showFps ? 'checked' : ''}></label>
       <button class="btn" data-a="back">Back</button></div>`);
     this.el!.querySelectorAll<HTMLInputElement>('[data-s]').forEach((inp) => inp.addEventListener('input', () => {

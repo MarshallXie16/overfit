@@ -298,8 +298,11 @@ function basePass(g: G, m: TMap, x0: number, y0: number, tw: number, th: number,
         const fx = u - Math.floor(u), fy = v - Math.floor(v);
         const k4 = k * 4;
         if (fx < rr[k4] || fy < rr[k4 + 1] || fx > rr[k4 + 2] || fy > rr[k4 + 3]) {
+          const roadSide = (fx < rr[k4] && rr[k4] > 0.1) || (fy < rr[k4 + 1] && rr[k4 + 1] > 0.1) ||
+            (fx > rr[k4 + 2] && rr[k4 + 2] < 0.9) || (fy > rr[k4 + 3] && rr[k4 + 3] < 0.9);
           const br = 0.85 + n1 * 0.15 + n2 * 0.1;
-          R = 82 * br; Gc = 80 * br; B = 75 * br;
+          if (roadSide) { R = 82 * br; Gc = 80 * br; B = 75 * br; }
+          else { R = 30 * br; Gc = 30 * br; B = 29 * br; }
         } else {
           const grav = 0.82 + n2 * 0.18 + n3 * 0.16 + n1 * 0.08;
           R = roofR[k] * grav; Gc = roofG[k] * grav; B = roofB[k] * grav;
@@ -388,21 +391,29 @@ function chunk(g: G, r: () => number, x: number, y: number, rad: number, col: [n
 
 function deadTree(g: G, r: () => number, x: number, y: number, R: number, k: number): void {
   const segs: [number, number, number, number, number][] = [];
+  // organic branching: each limb is a chain of drifting sub-segments that forks
   const branch = (bx: number, by: number, a: number, len: number, w: number, depth: number) => {
-    const ex = bx + Math.cos(a) * len;
-    const ey = by + Math.sin(a) * len;
-    segs.push([bx, by, ex, ey, w]);
-    if (depth <= 0) return;
-    const nb = 2 + (r() < 0.4 ? 1 : 0);
-    for (let i = 0; i < nb; i++) {
-      const t = 0.45 + r() * 0.45;
-      branch(bx + (ex - bx) * t, by + (ey - by) * t, a + (r() - 0.5) * 1.5, len * (0.4 + r() * 0.25), w * 0.55, depth - 1);
+    const n = 3;
+    let px = bx, py = by, ang = a;
+    for (let i = 0; i < n; i++) {
+      ang += (r() - 0.5) * 0.55;
+      const l = len / n;
+      const nx = px + Math.cos(ang) * l;
+      const ny = py + Math.sin(ang) * l;
+      const ww = w * (1 - (i / n) * 0.45);
+      segs.push([px, py, nx, ny, ww]);
+      if (depth > 0 && i >= 1 && r() < 0.75) {
+        const side = r() < 0.5 ? -1 : 1;
+        branch(nx, ny, ang + side * (0.45 + r() * 0.6), len * (0.35 + r() * 0.3), ww * 0.6, depth - 1);
+      }
+      px = nx; py = ny;
     }
   };
-  const nMain = 5 + Math.floor(r() * 3);
+  const nMain = 3 + Math.floor(r() * 3);
   const a0 = r() * TAU;
   for (let i = 0; i < nMain; i++) {
-    branch(x, y, a0 + (i / nMain) * TAU + (r() - 0.5) * 0.6, R * (0.55 + r() * 0.4), 2.6 * k * (R / (22 * k)), 2);
+    const a = a0 + (i / nMain) * TAU + (r() - 0.5) * 1.1;
+    branch(x, y, a, R * (0.45 + r() * 0.55), 2.4 * k * (R / (22 * k)), 2);
   }
   const drawSegs = (dx: number, dy: number, col: string, wm: number) => {
     g.strokeStyle = col;
@@ -411,32 +422,46 @@ function deadTree(g: G, r: () => number, x: number, y: number, R: number, k: num
       g.beginPath();
       g.moveTo(ax + dx, ay + dy);
       g.lineTo(bx + dx, by + dy);
-      g.lineWidth = Math.max(0.5, w * wm);
+      g.lineWidth = Math.max(0.45, w * wm);
       g.stroke();
     }
   };
+  const leafy = r() < 0.45;
   // shadow (cast bottom-right; trees are tall)
   g.save();
-  g.globalAlpha = 0.28;
-  drawSegs(R * 0.35, R * 0.45, '#000', 1.1);
+  g.globalAlpha = 0.26;
+  drawSegs(R * 0.32, R * 0.42, '#000', 1.1);
   g.restore();
-  drawSegs(0, 0, '#211a14', 1.25);
-  drawSegs(0, 0, '#4a3a2b', 0.85);
-  drawSegs(-0.4 * k, -0.4 * k, 'rgba(150,130,100,0.35)', 0.3);
+  if (leafy) {
+    for (let i = 0; i < 7; i++) {
+      const s = segs[Math.floor(r() * segs.length)];
+      blob(g, s[2] + R * 0.32, s[3] + R * 0.42, R * 0.28, 'rgba(0,0,0,0.22)');
+    }
+  }
+  drawSegs(0, 0, '#1d1611', 1.3);
+  drawSegs(0, 0, '#4b3b2c', 0.85);
+  drawSegs(-0.45 * k, -0.45 * k, 'rgba(160,140,110,0.32)', 0.32);
   // trunk top
   g.beginPath();
-  g.arc(x, y, Math.max(1.5, R * 0.13), 0, TAU);
+  g.arc(x, y, Math.max(1.6, R * 0.12), 0, TAU);
   g.fillStyle = '#3a2c20';
   g.fill();
   g.strokeStyle = 'rgba(0,0,0,0.6)';
   g.lineWidth = 0.8;
   g.stroke();
-  // a few clinging dry leaves
-  for (let i = 0; i < 10; i++) {
+  // remnants of dry foliage clinging to the twigs
+  const nl = leafy ? 26 : 8;
+  for (let i = 0; i < nl; i++) {
     const s = segs[Math.floor(r() * segs.length)];
-    g.fillStyle = r() < 0.5 ? 'rgba(120,98,60,0.75)' : 'rgba(92,80,48,0.75)';
+    const c = [[124, 100, 60], [96, 82, 50], [140, 118, 76], [86, 70, 44]][Math.floor(r() * 4)];
+    const rad = (leafy ? 1.2 + r() * 2.2 : 0.7 + r() * 0.9) * k;
+    const cx = s[2] + (r() - 0.5) * 3 * k, cy = s[3] + (r() - 0.5) * 3 * k;
+    const gr = g.createRadialGradient(cx - rad * 0.3, cy - rad * 0.3, 0, cx, cy, rad);
+    gr.addColorStop(0, `rgba(${c[0] + 24},${c[1] + 20},${c[2] + 14},0.85)`);
+    gr.addColorStop(1, `rgba(${c[0] - 20},${c[1] - 20},${c[2] - 14},0.75)`);
+    g.fillStyle = gr;
     g.beginPath();
-    g.arc(s[2] + (r() - 0.5) * 2 * k, s[3] + (r() - 0.5) * 2 * k, (0.7 + r() * 0.9) * k, 0, TAU);
+    g.arc(cx, cy, rad, 0, TAU);
     g.fill();
   }
 }
@@ -598,12 +623,12 @@ export function renderTerrainChunk(map: TerrainMap, x0: number, y0: number, tw: 
       g.rect(X, Y, S, S);
       g.clip();
       // patches & cracks
-      if (r() < 0.22) {
+      if (r() < 0.1) {
         const pw = (0.3 + r() * 0.5) * S, ph = (0.2 + r() * 0.4) * S;
         const px = X + r() * (S - pw * 0.5), py = Y + r() * (S - ph * 0.5);
-        g.fillStyle = 'rgba(15,16,18,0.35)';
+        g.fillStyle = 'rgba(15,16,18,0.18)';
         g.fillRect(px, py, pw, ph);
-        g.strokeStyle = 'rgba(90,90,90,0.18)';
+        g.strokeStyle = 'rgba(90,90,90,0.12)';
         g.lineWidth = 0.8 * k;
         g.strokeRect(px, py, pw, ph);
       }

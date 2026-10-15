@@ -5,6 +5,7 @@ export interface Settings {
   edgeScroll: boolean;
   quality: number;
   showFps: boolean;
+  advisor: boolean;
   difficulty: 'recruit' | 'veteran' | 'nightmare';
 }
 
@@ -18,7 +19,7 @@ export interface EndlessRecord {
   daily: Record<string, { score: number; surges: number; kills: number }>;
 }
 
-const DEF_SETTINGS: Settings = { master: 0.8, sfx: 0.8, music: 0.55, edgeScroll: true, quality: 1, showFps: false, difficulty: 'veteran' };
+const DEF_SETTINGS: Settings = { master: 0.8, sfx: 0.8, music: 0.55, edgeScroll: true, quality: 1, showFps: false, advisor: true, difficulty: 'veteran' };
 
 function load<T>(key: string, def: T): T {
   try {

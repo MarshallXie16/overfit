@@ -8,6 +8,7 @@ import { step } from '../sim/step';
 import { AXIOM, DT, HUMAN, type SimEvent } from '../sim/types';
 import type { World } from '../sim/world';
 import { Hud, type IconSource } from '../ui/hud';
+import { Advisor } from './advisor';
 
 export interface SessionOpts {
   attract?: boolean;
@@ -32,6 +33,7 @@ export class Session {
   private stepMsAvg = 0;
   fps = 60;
   frameMsAvg = 16;
+  advisor: Advisor | null = null;
 
   constructor(app: Application, bank: TextureBank, icons: IconSource | null, terrain: TerrainRenderer | null, world: World, hudLayer: HTMLElement, opts: SessionOpts = {}) {
     this.world = world;
@@ -62,6 +64,7 @@ export class Session {
     this.hud.onMenu = () => this.opts.onMenu?.(this);
     this.hud.onSpeed = () => { this.speedIdx = (this.speedIdx + 1) % SPEEDS.length; };
     this.hud.speedLabel = () => `${SPEEDS[this.speedIdx]}×`;
+    if (world.settings.mode !== 'campaign') this.advisor = new Advisor();
   }
 
   get speed(): number { return SPEEDS[this.speedIdx]; }
@@ -100,6 +103,8 @@ export class Session {
     w.events = [];
     this.r.onEvents(events);
     this.hud?.onEvents(events);
+    this.advisor?.observe(events);
+    if (this.advisor && this.hud) this.advisor.update(w, dt, (sp, tx) => this.hud!.radio(sp, tx));
     this.playAudio(events);
     if (this.bot) this.attractCamera(dt);
     this.r.render(alpha, dt);

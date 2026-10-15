@@ -1,6 +1,6 @@
 import { Application, Container, Graphics, Sprite, Texture, TilingSprite } from 'pixi.js';
-import { BUILDINGS, UNITS } from '../sim/data/defs';
-import { AXIOM, HUMAN, NEUTRAL, type SimEvent } from '../sim/types';
+import { BUILDINGS } from '../sim/data/defs';
+import { AXIOM, HUMAN, type SimEvent } from '../sim/types';
 import type { Entity, World } from '../sim/world';
 import { ART_SCALE, Fx, TILE } from './fx';
 import type { TextureBank, TexInfo } from './textures';
@@ -202,10 +202,22 @@ export class GameRenderer {
   }
 
   // ---------------------------------------------------------------- per-frame
+  private adaptTint = 0xffffff;
+  private computeAdaptTint(w: World): void {
+    const r = w.axiom.resist;
+    let top: 'kinetic' | 'energy' | 'explosive' = 'kinetic';
+    for (const k of ['energy', 'explosive'] as const) if (r[k] > r[top]) top = k;
+    const v = Math.min(1, r[top] / 0.6) * 0.55;
+    const col = top === 'kinetic' ? [255, 196, 120] : top === 'energy' ? [130, 225, 255] : [255, 150, 90];
+    const mix = (c: number) => Math.round(255 + (c - 255) * v);
+    this.adaptTint = (mix(col[0]) << 16) | (mix(col[1]) << 8) | mix(col[2]);
+  }
+
   render(alpha: number, dt: number): void {
     const w = this.world;
     if (!w) return;
     this.time += dt;
+    if (w.tick % 20 === 0) this.computeAdaptTint(w);
     this.clampCamera();
     const z = this.cam.zoom;
     const sh = this.fx.shakeAmt;
@@ -327,9 +339,9 @@ export class GameRenderer {
         const off = e.flying ? 26 : e.radius > 0.6 ? 5 : 3;
         v.shadow.position.set(px + off * 0.6, py + off);
       }
-      // stunned / hacked tint
+      // stunned tint; AXIOM robots' plating shifts toward their dominant adaptation
       const stunned = e.stunUntil > w.time;
-      v.body.tint = stunned ? 0x8fb8ff : 0xffffff;
+      v.body.tint = stunned ? 0x8fb8ff : e.team === AXIOM ? this.adaptTint : 0xffffff;
       if (stunned && Math.random() < dt * 8) this.fx.spawn('fx:spark', px + (Math.random() - 0.5) * 20, py + (Math.random() - 0.5) * 20, { life: 0.2, s0: 0.4, s1: 0.1, tint: 0x80c0ff, add: true });
       v.root.alpha = 1;
     } else if (e.isBuilding) {
@@ -764,4 +776,3 @@ export class GameRenderer {
   }
 }
 
-export { NEUTRAL, UNITS };
