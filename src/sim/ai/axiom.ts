@@ -370,7 +370,8 @@ function launchSurge(w: World, c: TickCache): void {
   A.surgeN++;
   const n = A.surgeN;
   const cascade = n % 4 === 0;
-  let budget = A.surgePool * D.surge;
+  // early surges are damped: AXIOM is still 'learning' (Surge 1 ≈ 20–25 small robots on Veteran)
+  let budget = A.surgePool * D.surge * Math.min(1, 0.45 + 0.15 * (n - 1));
   A.surgePool = 0;
   const homes = c.axiomBuildings.filter((b) => b.built && (b.kind === 'fabricator' || b.kind === 'core'));
   if (!homes.length) return;
@@ -396,9 +397,10 @@ function launchSurge(w: World, c: TickCache): void {
     setOrder(u, { type: 'flow', field: 'human', tx, ty });
     spawned++;
   }
-  // half of the standing garrison joins
+  // part of the standing garrison joins (a quarter early on, half later)
+  const join = n <= 2 ? 0.25 : 0.5;
   for (const u of c.units) {
-    if (u.team === AXIOM && u.order?.type === 'guard' && w.rng.next() < 0.5) {
+    if (u.team === AXIOM && u.order?.type === 'guard' && w.rng.next() < join) {
       u.squad = n;
       setOrder(u, { type: 'flow', field: 'human', tx, ty });
       spawned++;

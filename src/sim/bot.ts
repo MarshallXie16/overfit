@@ -42,17 +42,17 @@ export interface BotConfig {
 export const BOT_LEVELS: BotConfig[] = [
   {
     engineers: 11, thinkEvery: 1.5, adapt: false, protocols: false, micro: false, walls: false,
-    turretRate: 0.5, maxTurrets: 5, maxBarracks: 2, maxFactories: 1, maxLabs: 1, maxSites: 1, netrunners: 1,
+    turretRate: 0.5, maxTurrets: 5, maxBarracks: 3, maxFactories: 1, maxLabs: 1, maxSites: 1, netrunners: 1,
     attackValue: 1100, attackRatio: 1.1, strikeShare: 0.85,
   },
   {
     engineers: 15, thinkEvery: 1, adapt: true, protocols: true, micro: true, walls: true,
-    turretRate: 0.8, maxTurrets: 9, maxBarracks: 2, maxFactories: 2, maxLabs: 1, maxSites: 2, netrunners: 3,
+    turretRate: 1, maxTurrets: 10, maxBarracks: 4, maxFactories: 2, maxLabs: 1, maxSites: 2, netrunners: 3,
     attackValue: 1500, attackRatio: 1.5, strikeShare: 0.8,
   },
   {
     engineers: 18, thinkEvery: 1, adapt: true, protocols: true, micro: true, walls: true,
-    turretRate: 1.1, maxTurrets: 12, maxBarracks: 3, maxFactories: 2, maxLabs: 2, maxSites: 3, netrunners: 4,
+    turretRate: 1.3, maxTurrets: 14, maxBarracks: 5, maxFactories: 2, maxLabs: 2, maxSites: 3, netrunners: 4,
     attackValue: 1600, attackRatio: 1.5, strikeShare: 0.8,
   },
 ];
@@ -119,6 +119,9 @@ export class Bot {
   private wallsFor = new Set<number>();
   private farmHold = 0;
   private hashBuf: number[] = [];
+  /** smoothed scrap income (per second) */
+  income = 0;
+  private gathered: number[] = [];
 
   constructor(level = 1) {
     this.level = Math.max(0, Math.min(BOT_LEVELS.length - 1, level | 0));
@@ -138,6 +141,9 @@ export class Bot {
     this.data = H.data;
     this.pop = H.pop;
     this.reserve = 0;
+    this.gathered.push(H.stats.scrapGathered);
+    if (this.gathered.length > 31) this.gathered.shift();
+    this.income = (H.stats.scrapGathered - this.gathered[0]) / Math.max(1, (this.gathered.length - 1) * this.cfg.thinkEvery);
     if (!this.clusters) this.clusters = this.buildClusters(w);
     if (!this.homeField || w.time - this.homeFieldAt > 20) this.updateFronts(w);
 
@@ -161,6 +167,7 @@ export class Bot {
     this.mode = 'home';
     this.targetId = 0;
     this.wallsFor.clear();
+    this.gathered = [];
     this.rng = new Rng(((w.settings.seed * 2654435761) ^ (0x5eed + this.level)) >>> 0);
   }
 
@@ -279,6 +286,23 @@ export class Bot {
     return { x: hq.x + (f.x - hq.x) * t * 0.85, y: hq.y + (f.y - hq.y) * t * 0.85 };
   }
 
+  /** Where the home army stands: just behind the turrets that cover the main front. */
+  private anchor(): Pt {
+    const hq = this.s.hq!;
+    const f = this.fronts[0];
+    let x = 0, y = 0, k = 0;
+    for (const kind of TURRETS) for (const b of this.s.byKind.get(kind) ?? []) {
+      if (!b.id || !b.built) continue;
+      if (f && Math.hypot(b.x - f.x, b.y - f.y) > 12) continue;
+      x += b.x; y += b.y; k++;
+    }
+    if (!k) return this.homePoint();
+    const cx = x / k, cy = y / k;
+    const dx = hq.x - cx, dy = hq.y - cy, d = Math.hypot(dx, dy) || 1;
+    const back = Math.min(1.5, d * 0.3);
+    return { x: cx + (dx / d) * back, y: cy + (dy / d) * back };
+  }
+
   // ================================================================ placement
   private tileOk(w: World, x: number, y: number): boolean {
     if (x < 1 || y < 1 || x >= w.w - 1 || y >= w.h - 1) return false;
@@ -373,10 +397,14 @@ export class Bot {
       }
     }
     // ---- construction sites get builders
+    let wallBuilders = 0;
+    for (const e of s.engineers) { const o = e.order; if (o?.type === 'build') { const b = w.get(o.id); if (b?.kind === 'wall') wallBuilders++; } }
     for (const site of s.sites) {
       const want = site.kind === 'wall' ? 1 : site.size >= 3 ? 3 : 2;
       let have = buildersOf.get(site.id) ?? 0;
       if (have >= want) continue;
+      if (site.kind === 'wall' && (have > 0 || wallBuilders >= 2)) continue;
+      if (site.kind === 'wall') wallBuilders++;
       if (this.dangerAt(site.x, site.y, 7)) continue;
       const cands = s.engineers
         .filter((e) => !busy.has(e.id) && e.order?.type !== 'build' && e.order?.type !== 'move')
@@ -491,23 +519,31 @@ export class Bot {
     const popFree = H.popCap + pendingPop - this.pop;
 
     const surgeSoon = A.tuning.surges && A.surgeT < 45;
-    const turretWant = Math.min(cfg.maxTurrets, Math.floor((this.level === 0 ? 1 : 2) + H.stats.surgesSurvived * cfg.turretRate + (t > 600 ? 1 : 0)));
+    const turretWant = Math.min(cfg.maxTurrets, Math.floor(1 + this.level + A.surgeN * cfg.turretRate + (t > 600 ? 1 : 0)));
     const turrets = TURRETS.reduce((n, k) => n + this.count(k), 0);
 
     type Want = { kind: string; save: boolean; at?: () => Pt | null };
     const wants: Want[] = [];
-    if (this.count('barracks') < 1) wants.push({ kind: 'barracks', save: true });
-    if (powerFree < 3 + (this.count('barracks') ? 2 : 0) && this.count('generator') - this.count('generator', true) < 1) wants.push({ kind: 'generator', save: true });
+    const nB = this.count('barracks'), nF = this.count('factory'), nL = this.count('lab');
+    // production capacity (scrap/s a producer can turn into units) vs. income
+    const capacity = nB * 4.5 + nF * 8;
+    const income = this.income;
+    const floating = this.scrap > 450 + this.reserve;
+    const wantProducer = t > 75 && (capacity < income * 0.85 || floating) && nB + nF > 0 && this.count('barracks', true) === nB && this.count('factory', true) === nF;
+    if (nB < 1) wants.push({ kind: 'barracks', save: true });
+    if (powerFree < 3 + (nB ? 2 : 0) && this.count('generator') - this.count('generator', true) < 1) wants.push({ kind: 'generator', save: true });
     if (popFree < 3 + producers * 2 && H.popCap + pendingPop < 150 && (this.count('habitat') - this.count('habitat', true)) < (producers > 3 ? 2 : 1)) wants.push({ kind: 'habitat', save: true });
-    if (turrets < turretWant && this.count('barracks') > 0) wants.push({ kind: this.pickTurret(w), save: surgeSoon || turrets < 2, at: () => this.turretSpot(w) });
-    if (this.count('lab') < 1 && this.count('barracks', true) > 0 && (t > 110 || this.scrap > 350)) wants.push({ kind: 'lab', save: t > 150 });
+    if (turrets < turretWant && nB > 0) wants.push({ kind: this.pickTurret(w), save: surgeSoon || turrets < 2, at: () => this.turretSpot(w) });
+    if (nL < 1 && this.count('barracks', true) > 0 && (t > 110 || this.scrap > 350)) wants.push({ kind: 'lab', save: t > 150 });
+    if (wantProducer) {
+      if (nF < 1 && this.count('lab', true) > 0 && nB >= 2) wants.push({ kind: 'factory', save: false });
+      else if (nB < cfg.maxBarracks) wants.push({ kind: 'barracks', save: false });
+      else if (nF < cfg.maxFactories && this.count('lab', true) > 0) wants.push({ kind: 'factory', save: false });
+    }
     const depot = this.depotPlan(w);
     if (depot) wants.push({ kind: 'depot', save: false, at: () => depot });
-    if (this.count('factory') < 1 && this.count('lab', true) > 0 && t > 260) wants.push({ kind: 'factory', save: t > 360 });
-    if (this.count('barracks') < 2 && t > 300 && cfg.maxBarracks >= 2) wants.push({ kind: 'barracks', save: false });
-    if (this.count('barracks') < 3 && t > 560 && cfg.maxBarracks >= 3 && this.scrap > 400) wants.push({ kind: 'barracks', save: false });
-    if (this.count('factory') < 2 && t > 720 && cfg.maxFactories >= 2 && this.scrap > 500) wants.push({ kind: 'factory', save: false });
-    if (this.count('lab') < 2 && t > 700 && cfg.maxLabs >= 2 && this.scrap > 450) wants.push({ kind: 'lab', save: false });
+    if (nF < 1 && this.count('lab', true) > 0 && t > 300) wants.push({ kind: 'factory', save: t > 400 });
+    if (nL < 2 && t > 700 && cfg.maxLabs >= 2 && this.scrap > 450) wants.push({ kind: 'lab', save: false });
 
     for (const want of wants) {
       if (sitesLeft <= 0) break;
@@ -625,8 +661,8 @@ export class Bot {
       c.amount = amt;
       if (amt < 300) continue;
       let dd = Infinity;
-      for (const d of s.dropoffs) dd = Math.min(dd, Math.hypot(d.x - c.x, d.y - c.y));
-      for (const d of s.byKind.get('depot') ?? []) if (d.id) dd = Math.min(dd, Math.hypot(d.x - c.x, d.y - c.y));
+      for (const d of s.dropoffs) dd = Math.min(dd, Math.hypot(d.x - c.x, d.y - c.y) - d.size / 2);
+      for (const d of s.byKind.get('depot') ?? []) if (d.id) dd = Math.min(dd, Math.hypot(d.x - c.x, d.y - c.y) - 1);
       if (dd < 10) { served += amt; continue; }
       if (amt < 1200) continue;
       if (w.creepAt(c.x, c.y) > 0.2) continue;
@@ -713,9 +749,9 @@ export class Bot {
     this.data -= def.cost.data ?? 0;
     this.pop += def.pop;
     w.commands.push({ c: 'train', building: b.id, kind });
-    if (!b.rally && b.kind !== 'hq') {
-      const p = this.homePoint();
-      w.commands.push({ c: 'rally', ids: [b.id], x: p.x, y: p.y });
+    if (b.kind !== 'hq' && this.thinks % 10 === 0) {
+      const p = this.anchor();
+      if (!b.rally || Math.hypot(b.rally.x - p.x, b.rally.y - p.y) > 3) w.commands.push({ c: 'rally', ids: [b.id], x: p.x, y: p.y });
     }
   }
 
@@ -791,30 +827,59 @@ export class Bot {
     const strike: Entity[] = [];
     for (const id of this.strike) { const u = w.get(id); if (u && u.team === HUMAN) strike.push(u); else this.strike.delete(id); }
     const home = s.army.filter((u) => !this.strike.has(u.id));
-    const home0 = this.homePoint();
 
     // ---------------------------------------------------------- base defence
+    const anchor = this.anchor();
     if (s.threats.length) {
-      const tgt = this.threatCenter(w);
+      // group threats into clusters
+      const cl: { x: number; y: number; v: number; n: number }[] = [];
+      for (const u of s.threats) {
+        let c = cl.find((q) => Math.hypot(q.x - u.x, q.y - u.y) < 7);
+        if (!c) { c = { x: u.x, y: u.y, v: 0, n: 0 }; cl.push(c); }
+        c.n++;
+        c.x += (u.x - c.x) / c.n; c.y += (u.y - c.y) / c.n;
+        c.v += this.value(u);
+      }
+      cl.sort((a, b) => b.v - a.v);
+      const used = new Set<number>();
+      let frontV = 0;
+      for (const c of cl) {
+        const dA = Math.hypot(c.x - anchor.x, c.y - anchor.y);
+        if (dA < 12) {
+          // fight at the turret line: step out at most ~4 tiles toward the enemy
+          frontV += c.v;
+          const k = Math.min(1, 4 / Math.max(1, dA));
+          const px = anchor.x + (c.x - anchor.x) * k, py = anchor.y + (c.y - anchor.y) * k;
+          const g = home.filter((u) => !used.has(u.id) && Math.hypot(u.x - anchor.x, u.y - anchor.y) < 22);
+          for (const u of g) used.add(u.id);
+          this.amove(w, g.filter((u) => !u.order || Math.hypot(u.x - px, u.y - py) > 6), px, py, 3);
+        } else {
+          // raid elsewhere: send the nearest units with enough punch
+          const g = home.filter((u) => !used.has(u.id)).sort((a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y));
+          const pick: Entity[] = [];
+          let v = 0;
+          for (const u of g) {
+            if (v >= c.v * 1.6 && pick.length >= 4) break;
+            if (frontV > 0 && pick.length >= g.length * 0.5) break;
+            pick.push(u); v += this.value(u); used.add(u.id);
+          }
+          this.amove(w, pick, c.x, c.y, 3);
+        }
+      }
       const big = s.threats.length >= 6 || A.surgeActive;
-      const defenders = home.filter((u) => Math.hypot(u.x - hq.x, u.y - hq.y) < s.baseR + 25);
-      this.amove(w, defenders, tgt.x, tgt.y, 3);
       if (big && strike.length && this.mode === 'attack') {
         const sc = this.centroid(strike);
         const far = Math.hypot(sc.x - hq.x, sc.y - hq.y);
         let threatValue = 0;
-        for (const u of s.threats) threatValue += this.value(u);
+        for (const c of cl) threatValue += c.v;
         let homeValue = 0;
         for (const u of home) homeValue += this.value(u);
-        if (threatValue > homeValue * 0.8 + 300 || far < 30) this.recall(w, strike, tgt);
+        if (threatValue > homeValue * 0.8 + 300 || far < 30) this.recall(w, strike, anchor);
       }
     } else {
-      // regroup idle home units at the rally point
-      const idle = home.filter((u) => !u.order && Math.hypot(u.x - home0.x, u.y - home0.y) > 7);
-      if (idle.length) this.amove(w, idle, home0.x, home0.y, 2);
-      // defenders that chased threats away come back
-      const strays = home.filter((u) => u.order?.type === 'amove' && Math.hypot(u.x - hq.x, u.y - hq.y) > s.baseR + 14);
-      if (strays.length) this.amove(w, strays, home0.x, home0.y, 2);
+      // regroup home units at the anchor; chasers come back
+      const back = home.filter((u) => Math.hypot(u.x - anchor.x, u.y - anchor.y) > 7 && (!u.order || u.order.type === 'amove'));
+      if (back.length) this.amove(w, back, anchor.x, anchor.y, 2);
     }
 
     // ---------------------------------------------------------- attacks
@@ -912,7 +977,7 @@ export class Bot {
   }
 
   private recall(w: World, strike: Entity[], to?: Pt): void {
-    const p = to ?? this.homePoint();
+    const p = to ?? this.anchor();
     this.amove(w, strike, p.x, p.y, 3);
     this.strike.clear();
     this.mode = 'home';
@@ -984,7 +1049,7 @@ export class Bot {
     const claimed = new Set<number>();
     for (const n of s.netrunners) if (n.order?.type === 'hack') claimed.add(n.order.id);
     const strike = [...this.strike].map((id) => w.get(id)).filter((u): u is Entity => !!u);
-    const anchor = this.mode === 'attack' && strike.length ? this.centroid(strike) : this.homePoint();
+    const anchor = this.mode === 'attack' && strike.length ? this.centroid(strike) : this.anchor();
     for (const n of s.netrunners) {
       if (n.order?.type === 'hack') {
         const t = w.get(n.order.id);

@@ -77,6 +77,7 @@ export class Fx {
     const ti = this.bank.get(key);
     const sp = this.sprite();
     sp.texture = o.frames ? o.frames[0] : ti.tex;
+    if (!o.frames) sp.anchor.set(ti.ax, ti.ay);
     sp.tint = o.tint ?? 0xffffff;
     sp.blendMode = o.add ? 'add' : 'normal';
     (o.add ? this.addLayer : this.normLayer).addChild(sp);

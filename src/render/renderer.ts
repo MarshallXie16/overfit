@@ -638,13 +638,14 @@ export class GameRenderer {
           const team = ev.team as number;
           const fxk = ev.fx as string;
           const tcol = team === AXIOM ? 0xff5060 : 0xffc060;
+          const rot = Math.atan2(ty - y, tx - x);
           if (fxk === 'bullet') {
             fx.line([x, y, tx, ty], tcol, 1.2, 0.07, 2);
-            fx.spawn('fx:muzzle:' + (Math.random() < 0.5 ? 0 : 1), x, y, { life: 0.06, s0: 0.45, s1: 0.4, a0: 1, a1: 0.6, tint: team === AXIOM ? 0xff8080 : 0xffffff, add: true });
+            fx.spawn('fx:muzzle:' + (Math.random() < 0.5 ? 0 : 1), x, y, { life: 0.06, s0: 0.45, s1: 0.4, a0: 1, a1: 0.6, tint: team === AXIOM ? 0xff8080 : 0xffffff, add: true, rot });
             fx.spawn('fx:spark', tx + (Math.random() - 0.5) * 8, ty + (Math.random() - 0.5) * 8, { life: 0.12, s0: 0.3, s1: 0.1, tint: 0xffe0a0, add: true });
           } else if (fxk === 'cannon') {
             fx.line([x, y, tx, ty], 0xffd080, 2.5, 0.09, 4);
-            fx.spawn('fx:muzzle:0', x, y, { life: 0.1, s0: 0.9, s1: 0.7, a0: 1, a1: 0.5, add: true });
+            fx.spawn('fx:muzzle:0', x, y, { life: 0.1, s0: 0.9, s1: 0.7, a0: 1, a1: 0.5, add: true, rot });
             fx.spawn('fx:smoke', x, y, { life: 0.8, s0: 0.4, s1: 1, a0: 0.4, a1: 0, tint: 0x6a6460 });
             fx.explosion(tx, ty, 0.35, this.explosionFrames);
           } else if (fxk === 'rail') {
@@ -658,7 +659,7 @@ export class GameRenderer {
           } else if (fxk === 'melee') {
             fx.spawn('fx:spark', tx + (Math.random() - 0.5) * 10, ty + (Math.random() - 0.5) * 10, { life: 0.15, s0: 0.5, s1: 0.1, tint: 0xffd0a0, add: true });
           } else if (fxk === 'rocket' || fxk === 'shell') {
-            fx.spawn('fx:muzzle:1', x, y, { life: 0.08, s0: 0.6, s1: 0.5, add: true });
+            fx.spawn('fx:muzzle:1', x, y, { life: 0.08, s0: 0.6, s1: 0.5, add: true, rot });
             fx.spawn('fx:smoke', x, y, { life: 0.9, s0: 0.4, s1: 1.1, a0: 0.45, a1: 0, tint: 0x5a5550 });
           }
           break;

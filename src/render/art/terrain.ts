@@ -58,6 +58,52 @@ function makeNoise(seed: number): Noise {
   return fn;
 }
 
+// Tileable detail textures (256x256 texels = 8x8 tiles at 32 texels/tile), cached per seed.
+interface Detail { t1: Float32Array; t2: Float32Array; t3: Float32Array; grass: Float32Array; sp: Float32Array }
+const detailCache = new Map<number, Detail>();
+
+function tileNoise(seed: number, px: number, py: number): Float32Array {
+  const r = mulberry32(seed);
+  const lat = new Float32Array(px * py);
+  for (let i = 0; i < lat.length; i++) lat[i] = r();
+  const out = new Float32Array(65536);
+  for (let y = 0; y < 256; y++) {
+    const fy = (y / 256) * py;
+    const yi = Math.floor(fy);
+    let yf = fy - yi;
+    yf = yf * yf * (3 - 2 * yf);
+    const y0 = (yi % py) * px, y1 = ((yi + 1) % py) * px;
+    for (let x = 0; x < 256; x++) {
+      const fx = (x / 256) * px;
+      const xi = Math.floor(fx);
+      let xf = fx - xi;
+      xf = xf * xf * (3 - 2 * xf);
+      const x0 = xi % px, x1 = (xi + 1) % px;
+      const a = lat[y0 + x0], b = lat[y0 + x1], c = lat[y1 + x0], d = lat[y1 + x1];
+      out[(y << 8) | x] = a + (b - a) * xf + (c - a) * yf + (a - b - c + d) * xf * yf;
+    }
+  }
+  return out;
+}
+
+function detailOf(seed: number): Detail {
+  let d = detailCache.get(seed);
+  if (d) return d;
+  const t1 = tileNoise(seed ^ 0x1111, 24, 24);
+  const t2 = tileNoise(seed ^ 0x2222, 72, 72);
+  const t3 = tileNoise(seed ^ 0x3333, 184, 184);
+  const ga = tileNoise(seed ^ 0x4444, 224, 60);
+  const gb = tileNoise(seed ^ 0x5555, 60, 208);
+  const grass = new Float32Array(65536);
+  for (let i = 0; i < 65536; i++) grass[i] = ga[i] * 0.6 + gb[i] * 0.4;
+  const sp = new Float32Array(65536);
+  const r = mulberry32(seed ^ 0x6666);
+  for (let i = 0; i < 65536; i++) sp[i] = (r() - 0.5) * 9;
+  d = { t1, t2, t3, grass, sp };
+  detailCache.set(seed, d);
+  return d;
+}
+
 const smooth = (a: number, b: number, x: number) => {
   const t = x <= a ? 0 : x >= b ? 1 : (x - a) / (b - a);
   return t * t * (3 - 2 * t);
@@ -193,6 +239,18 @@ function basePass(g: G, m: TMap, x0: number, y0: number, tw: number, th: number,
   const N1 = makeNoise(m.seed);
   const N2 = makeNoise(m.seed + 1013);
   const N3 = makeNoise(m.seed + 7717);
+  const D = detailOf(m.seed);
+  // low-frequency zone noise sampled at tile corners, bilinearly interpolated per pixel
+  const CW = LW + 1;
+  const Z1 = new Float32Array(CW * (LH + 1));
+  const Z2 = new Float32Array(CW * (LH + 1));
+  for (let j = 0; j <= LH; j++) {
+    for (let i = 0; i <= LW; i++) {
+      const cu = x0 - LM + i, cv = y0 - LM + j;
+      Z1[j * CW + i] = N3(cu * 0.13 + 3.3, cv * 0.13 + 9.1);
+      Z2[j * CW + i] = N2(cu * 0.17 + 21.7, cv * 0.17 + 2.9);
+    }
+  }
   const inv = 1 / ppt;
   for (let py = 0; py < H; py++) {
     const wy = y0 * ppt + py;
@@ -244,15 +302,18 @@ function basePass(g: G, m: TMap, x0: number, y0: number, tw: number, th: number,
           }
         }
       }
-      // fine detail noise (shared)
-      const n1 = N1(u * 3.1, v * 3.1);
-      const n2 = N1(u * 9.3 + 11.7, v * 9.3 + 5.3);
-      const n3 = N3(u * 23, v * 23);
-      const sp = ((ihash(wx, wy, 0x2f) & 255) / 255 - 0.5) * 9;
+      // fine detail noise (shared, from tileable textures)
+      const ti = (Math.floor(u * 32) & 255) | ((Math.floor(v * 32) & 255) << 8);
+      const n1 = D.t1[ti];
+      const n2 = D.t2[ti];
+      const n3 = D.t3[ti];
+      const sp = D.sp[ti];
       let R = 0, Gc = 0, B = 0;
       if (t === GROUND || t === RUBBLE) {
-        const z1 = N3(u * 0.13 + 3.3, v * 0.13 + 9.1);
-        const z2 = N2(u * 0.17 + 21.7, v * 0.17 + 2.9);
+        const cfx = u - Math.floor(u), cfy = v - Math.floor(v);
+        const ci0 = tyl * CW + txl;
+        const z1 = (Z1[ci0] * (1 - cfx) + Z1[ci0 + 1] * cfx) * (1 - cfy) + (Z1[ci0 + CW] * (1 - cfx) + Z1[ci0 + CW + 1] * cfx) * cfy;
+        const z2 = (Z2[ci0] * (1 - cfx) + Z2[ci0 + 1] * cfx) * (1 - cfy) + (Z2[ci0 + CW] * (1 - cfx) + Z2[ci0 + CW + 1] * cfx) * cfy;
         const sc = smooth(0.48, 0.62, z1);
         const sd = smooth(0.56, 0.7, z2) * (1 - sc * 0.6);
         // asphalt lot -> concrete -> dirt
@@ -288,7 +349,7 @@ function basePass(g: G, m: TMap, x0: number, y0: number, tw: number, th: number,
           if (shoreD < 0.06) { R = 84 + n3 * 10; Gc = 82 + n3 * 10; B = 64 + n3 * 8; }
         }
       } else if (t === PARK) {
-        const grass = N3(u * 28, v * 7.5) * 0.6 + N1(u * 7.5, v * 26) * 0.4;
+        const grass = D.grass[ti];
         const earth = smooth(0.55, 0.72, N2(u * 0.55 + 5.5, v * 0.55 + 1.5) * 0.7 + n1 * 0.3);
         R = 86 + grass * 26; Gc = 80 + grass * 22; B = 50 + grass * 12;
         R += (76 - R) * earth; Gc += (64 - Gc) * earth; B += (50 - B) * earth;

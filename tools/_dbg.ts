@@ -25,7 +25,7 @@ for (let i = 0; i < mins*60*TICK_HZ && !w.result; i++) {
     for (const e of w.entities) if (e.alive && e.team === HUMAN && e.kind === 'engineer') orders.set(e.order?.type ?? 'none', (orders.get(e.order?.type ?? 'none') ?? 0) + 1);
     const ax = w.entities.filter((e) => e.alive && e.team === AXIOM && e.isUnit).length;
     const bq = w.entities.filter((e) => e.alive && e.team === HUMAN && (e.kind === "barracks" || e.kind === "factory")).map((e) => e.kind[0] + ":" + e.prod.map((p) => p.kind.slice(0,3) + (p.t/p.total).toFixed(1)).join("+")).join(" ");
-    console.log(`t=${w.time.toFixed(0)} trained ${w.human.stats.trained} [${bq}] scrap ${w.human.scrap|0} data ${w.human.data|0} pop ${w.human.pop}/${w.human.popCap} pwr ${w.human.powerUsed}/${w.human.power} | ${[...b].map(([k,v])=>k+':'+v).join(' ')} | ${[...u].map(([k,v])=>k+':'+v).join(' ')} | eng ${[...orders].map(([k,v])=>k+':'+v).join(' ')} | robots ${ax} surge ${w.axiom.surgeN}${w.axiom.surgeActive?'*':''} T-${w.axiom.surgeT|0} mode ${bot.mode} res ${[...w.human.research].join(',')}`);
+    console.log(`t=${w.time.toFixed(0)} inc ${bot.income.toFixed(1)} gath ${w.human.stats.scrapGathered|0} K ${w.human.stats.killed} L ${w.human.stats.lost} trained ${w.human.stats.trained} [${bq}] scrap ${w.human.scrap|0} data ${w.human.data|0} pop ${w.human.pop}/${w.human.popCap} pwr ${w.human.powerUsed}/${w.human.power} | ${[...b].map(([k,v])=>k+':'+v).join(' ')} | ${[...u].map(([k,v])=>k+':'+v).join(' ')} | eng ${[...orders].map(([k,v])=>k+':'+v).join(' ')} | robots ${ax} surge ${w.axiom.surgeN}${w.axiom.surgeActive?'*':''} T-${w.axiom.surgeT|0} mode ${bot.mode} res ${[...w.human.research].join(',')}`);
   }
 }
 console.log(w.result, (w.time/60).toFixed(1));

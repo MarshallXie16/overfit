@@ -823,7 +823,11 @@ function decalCrater(v: number): HTMLCanvasElement {
     g.lineTo(Math.cos(a) * l1, Math.sin(a) * l1);
     g.lineTo(Math.cos(a + w) * l0, Math.sin(a + w) * l0);
     g.closePath();
-    g.fillStyle = r() < 0.6 ? 'rgba(92,82,66,0.35)' : 'rgba(20,17,14,0.4)';
+    const eg = g.createLinearGradient(Math.cos(a) * l0, Math.sin(a) * l0, Math.cos(a) * l1, Math.sin(a) * l1);
+    const light2 = r() < 0.6;
+    eg.addColorStop(0, light2 ? 'rgba(92,82,66,0.4)' : 'rgba(30,25,20,0.35)');
+    eg.addColorStop(1, 'rgba(60,50,40,0)');
+    g.fillStyle = eg;
     g.fill();
   }
   // raised rim: irregular ring, lit on the outer top-left, shaded bottom-right
@@ -875,16 +879,16 @@ function decalCrater(v: number): HTMLCanvasElement {
   g.fillRect(-R, -R, R * 2, R * 2);
   g.restore();
   // clods on the rim
-  for (let k = 0; k < 16; k++) {
-    const a = r() * TAU, d = R * (1.05 + r() * 0.5);
-    const x = Math.cos(a) * d, y = Math.sin(a) * d, s = 1.2 + r() * 2.4;
+  for (let k = 0; k < 10; k++) {
+    const a = r() * TAU, d = R * (1.1 + r() * 0.45);
+    const x = Math.cos(a) * d, y = Math.sin(a) * d, s = 0.9 + r() * 1.5;
     g.fillStyle = 'rgba(0,0,0,0.4)';
     g.beginPath();
     g.arc(x + 0.8, y + 1, s, 0, TAU);
     g.fill();
     const cgr = g.createRadialGradient(x - s * 0.4, y - s * 0.4, 0, x, y, s);
-    cgr.addColorStop(0, '#7a6d5a');
-    cgr.addColorStop(1, '#3a332a');
+    cgr.addColorStop(0, '#6a5f4f');
+    cgr.addColorStop(1, '#2f2a23');
     g.fillStyle = cgr;
     g.beginPath();
     g.arc(x, y, s, 0, TAU);

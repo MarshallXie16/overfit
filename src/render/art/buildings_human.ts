@@ -6,7 +6,7 @@ import {
   mast, regular, rust, sandbagLine, scrapBits, slab, solar, tarp, tyre, vent,
 } from './kit';
 import {
-  TAU, circPath, castShadow, darken, ellPath, glow, glowLine, grime, groove, light, limb, line, mix, mulberry32,
+  TAU, circPath, castShadow, glow, glowLine, grime, groove, light, limb, line, mix, mulberry32,
   polyPath, rgba, rivets, rrPath, vol, type G,
 } from './util';
 
@@ -239,6 +239,21 @@ export function drawHabitat(L: Layers): void {
   tarp(b, [-58, -8, 28, -8, 32, 44, -60, 46], '#6d6650', 57, 5);
   line(b, -58, 19, 30, 18, 'rgba(255,255,255,0.12)', 1.2);
   line(b, -58, 20.5, 30, 19.5, 'rgba(0,0,0,0.25)', 1.2);
+  // sewn patch + guy ropes
+  b.save();
+  b.translate(6, 30);
+  b.rotate(0.12);
+  vol(b, rrPath(-8, -6, 16, 12, 1), '#5c6648', [-8, -6, 16, 12], { hi: 0.25, rim: null, ow: 0.7 });
+  b.setLineDash([1.6, 1.4]);
+  b.strokeStyle = 'rgba(230,220,190,0.5)';
+  b.lineWidth = 0.6;
+  b.strokeRect(-6.5, -4.5, 13, 9);
+  b.setLineDash([]);
+  b.restore();
+  for (const [x, y, sx, sy] of [[-58, 46, -62, 56], [32, 44, 40, 56], [-58, 19, -64, 22]]) {
+    line(b, x, y, sx, sy, 'rgba(210,200,170,0.55)', 0.8);
+    vol(b, circPath(sx, sy, 1.4), P.wood, [sx - 1.4, sy - 1.4, 2.8, 2.8], { radial: true, rim: null, ow: 0.5 });
+  }
   for (const [x, y] of [[-58, 46], [32, 44]]) {
     vol(b, circPath(x, y, 2.2), P.wood, [x - 2, y - 2, 4, 4], { radial: true, ow: 0.7 });
   }
