@@ -1,4 +1,5 @@
 :root {
+  color-scheme: dark;
   --bg: #07090c;
   --panel: rgba(9, 13, 17, 0.88);
   --panel-2: rgba(16, 22, 28, 0.92);
@@ -227,8 +228,8 @@ table.keys td:first-child { width: 42%; }
 
 /* ------------------------------------------------------------------ title */
 .overlay.title { background: linear-gradient(90deg, rgba(3,5,7,0.92) 0%, rgba(3,5,7,0.7) 38%, rgba(3,5,7,0.05) 70%); backdrop-filter: none; justify-content: flex-start; }
-.title-wrap { margin-left: 7vw; width: 440px; }
-.logo { font-size: 92px; font-weight: 700; letter-spacing: 18px; line-height: 1; color: #fff; text-shadow: 0 0 40px rgba(255,51,85,0.55), 0 0 2px #fff; position: relative; }
+.title-wrap { margin-left: max(16px, 7vw); width: min(440px, calc(100vw - 32px)); }
+.logo { font-size: clamp(48px, 14vw, 92px); font-weight: 700; letter-spacing: 18px; line-height: 1; color: #fff; text-shadow: 0 0 40px rgba(255,51,85,0.55), 0 0 2px #fff; position: relative; }
 .logo::after { content: 'OVERFIT'; position: absolute; left: 3px; top: 0; color: transparent; -webkit-text-stroke: 1px rgba(55,224,200,0.55); text-shadow: none; clip-path: inset(48% 0 38% 0); animation: glitch 3.5s steps(1) infinite; }
 .tagline { margin: 10px 0 34px 4px; font-size: 15px; letter-spacing: 7px; color: var(--red); }
 .title-menu .btn { font-size: 17px; }
@@ -238,3 +239,11 @@ table.keys td:first-child { width: 42%; }
 .bossbar { position: absolute; top: 48px; left: 50%; transform: translateX(-50%); display: none; align-items: center; gap: 10px; font-size: 11px; letter-spacing: 3px; color: var(--red); text-shadow: 0 0 8px rgba(255,51,85,0.7); }
 .bossbar .bb { width: 360px; height: 8px; border: 1px solid rgba(255,51,85,0.6); background: rgba(40,0,8,0.8); position: relative; }
 .bossbar .bb i { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, #a0102a, var(--red)); box-shadow: 0 0 10px var(--red); transition: width 0.2s; }
+
+@media (max-width: 520px) {
+  .overlay.title { background: rgba(3,5,7,0.82); }
+  .logo { letter-spacing: 8px; }
+  .tagline { letter-spacing: 4px; }
+  .dialog { min-width: 0; width: calc(100vw - 32px); padding: 20px 18px; }
+  .statgrid { grid-template-columns: 1fr 1fr; }
+}

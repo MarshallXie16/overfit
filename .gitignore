@@ -5,3 +5,4 @@ dist-single
 output
 *.log
 dist-single
+artifact

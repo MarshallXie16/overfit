@@ -1,3 +1,4 @@
+import 'pixi.js/unsafe-eval';
 import { Application } from 'pixi.js';
 import './ui/style.css';
 import chakra400 from '@fontsource/chakra-petch/files/chakra-petch-latin-400-normal.woff2?url';
