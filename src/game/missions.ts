@@ -35,6 +35,12 @@ export function setObjective(w: World, id: string, text: string, progress?: stri
   w.emit({ t: 'objective', id });
 }
 
+/** Update an objective's progress label (emits only when it changes). */
+export function setProgress(w: World, id: string, progress: string): void {
+  const o = w.objectives.find((x) => x.id === id);
+  if (o && !o.done && o.progress !== progress) { o.progress = progress; w.emit({ t: 'objective', id }); }
+}
+
 export function completeObjective(w: World, id: string): void {
   const o = w.objectives.find((x) => x.id === id);
   if (o && !o.done) { o.done = true; o.progress = undefined; w.emit({ t: 'objective', id, done: true, sfx: 'research_done' }); }

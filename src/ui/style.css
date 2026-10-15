@@ -234,3 +234,7 @@ table.keys td:first-child { width: 42%; }
 .title-menu .btn { font-size: 17px; }
 .foot { margin-top: 26px; font-size: 11px; letter-spacing: 2px; color: var(--muted); }
 @keyframes glitch { 0%, 90% { transform: none; } 92% { transform: translateX(-6px); } 94% { transform: translateX(5px); clip-path: inset(20% 0 66% 0); } 96% { transform: none; } }
+
+.bossbar { position: absolute; top: 48px; left: 50%; transform: translateX(-50%); display: none; align-items: center; gap: 10px; font-size: 11px; letter-spacing: 3px; color: var(--red); text-shadow: 0 0 8px rgba(255,51,85,0.7); }
+.bossbar .bb { width: 360px; height: 8px; border: 1px solid rgba(255,51,85,0.6); background: rgba(40,0,8,0.8); position: relative; }
+.bossbar .bb i { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, #a0102a, var(--red)); box-shadow: 0 0 10px var(--red); transition: width 0.2s; }

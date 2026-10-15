@@ -77,6 +77,7 @@ export class Hud {
         <button class="tbtn" data-k="menu" title="Menu (Esc)">☰</button>
       </div>
       <div class="paused-banner" data-k="paused">PAUSED — ORDERS STILL ACCEPTED</div>
+      <div class="bossbar" data-k="boss"><span>COLOSSUS</span><div class="bb"><i data-k="bossfill"></i></div></div>
       <div class="objectives panel clip" data-k="objectives"></div>
       <div class="alerts" data-k="alerts"></div>
       <div class="model panel clip" data-k="model"></div>
@@ -173,6 +174,15 @@ export class Hud {
     this.cardT -= dt;
     if (this.cardT <= 0) { this.cardT = 0.15; this.refreshCard(); this.refreshSelDynamic(); this.refreshObjectives(); }
     this.updateSurgeArrows();
+    let boss: Entity | null = null;
+    if (w.tick % 5 === 0 || this.bossId) {
+      const b = this.bossId ? w.get(this.bossId) : undefined;
+      if (b && w.isVisible(b.x, b.y)) boss = b;
+      else if (w.tick % 5 === 0) { boss = w.entities.find((e) => e.alive && e.kind === 'colossus' && e.team === AXIOM && w.isVisible(e.x, e.y)) ?? null; }
+      this.bossId = boss ? boss.id : 0;
+      this.el.boss.style.display = boss ? 'flex' : 'none';
+      if (boss) this.el.bossfill.style.width = `${(boss.hp / boss.maxHp) * 100}%`;
+    }
     this.attackT -= dt;
     if (this.attackT <= 0) { this.attackT = 0.5; this.checkUnderAttack(); }
     this.el.paused.style.display = w.paused ? 'block' : 'none';
@@ -336,6 +346,7 @@ export class Hud {
 
   // ---------------------------------------------------------------- under-attack alerts
   private attackT = 0;
+  private bossId = 0;
   private lastAttackAlert = { bld: -99, unit: -99 };
   private checkUnderAttack(): void {
     const w = this.w;
