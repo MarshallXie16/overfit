@@ -424,6 +424,7 @@ export class GameRenderer {
       if (e.cat === 'resource') {
         this.setTex(v.body, this.bank.get(`res:scrap:${e.variant % 4}`));
         v.body.scale.set(ART_SCALE * (0.75 + 0.25 * Math.min(1, e.amount / 400)));
+        if (Math.random() < dt * 0.6) this.fx.spawn('fx:glow', px + (Math.random() - 0.5) * 18, py + (Math.random() - 0.5) * 18, { life: 0.5, s0: 0.05, s1: 0.32, a0: 0.9, a1: 0, tint: 0xffc060, add: true });
       } else {
         const size = ['small', 'medium', 'large'][Math.min(2, e.variant >> 1)];
         this.setTex(v.body, this.bank.pick(`wreck:${size}:${e.variant & 1}`, `wreck:${size}:0`));
