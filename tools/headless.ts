@@ -208,7 +208,7 @@ export function runGame(seed: number, size: number, diff: Difficulty, lvl: numbe
       const axb = new Map<string, number>();
       for (const e of w.entities) if (e.alive && e.isBuilding && (e.team === AXIOM || e.kind === 'server_farm')) { const k = e.kind === 'server_farm' ? 'farm' + e.team : e.kind.slice(0, 4); axb.set(k, (axb.get(k) ?? 0) + 1); }
       const res = (k: 'kinetic' | 'energy' | 'explosive') => `${Math.round(A.resist[k] * 100)}/${Math.round(A.vuln[k] * 100)}`;
-      console.log(`  s${seed} ${(w.time / 60).toFixed(0)}m: scrap ${w.human.scrap | 0} data ${w.human.data | 0} pop ${w.human.pop}/${w.human.popCap} pwr ${w.human.powerUsed}/${w.human.power} | eng ${eng} army ${hu.length - eng} tur ${tur} | robots ${ax} thr ${A.threat} cmp ${A.computeRate.toFixed(1)}/s pool ${A.surgePool | 0} surge ${A.surgeN}${A.surgeActive ? '*' : ''} T-${A.surgeT | 0} | K/E/X r/v ${res('kinetic')} ${res('energy')} ${res('explosive')} | ${[...axb].map(([k, v]) => k + v).join(' ')} creep ${A.creepTiles} | bot ${bot?.mode ?? '-'} | ms ${(sumTick / w.tick).toFixed(2)}`);
+      console.log(`  s${seed} ${(w.time / 60).toFixed(0)}m: scrap ${w.human.scrap | 0} data ${w.human.data | 0} pop ${w.human.pop}/${w.human.popCap} pwr ${w.human.powerUsed}/${w.human.power} | eng ${eng} army ${hu.length - eng} tur ${tur} | robots ${ax} thr ${A.threat} cmp ${A.computeRate.toFixed(1)}/s pool ${A.surgePool | 0} bank ${A.compute | 0} surge ${A.surgeN}${A.surgeActive ? '*' : ''} T-${A.surgeT | 0} | K/E/X r/v ${res('kinetic')} ${res('energy')} ${res('explosive')} | ${[...axb].map(([k, v]) => k + v).join(' ')} creep ${A.creepTiles} | bot ${bot?.mode ?? '-'} | ms ${(sumTick / w.tick).toFixed(2)}`);
     }
   }
   const st = w.human.stats;

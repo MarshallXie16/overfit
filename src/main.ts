@@ -78,6 +78,7 @@ class App {
     this.menus.title();
     const q = new URLSearchParams(location.search);
     if (q.has('quick')) this.start({ mode: 'skirmish', difficulty: 'veteran', seed: +(q.get('seed') ?? 7), mapSize: +(q.get('size') ?? 96) });
+    if (q.has('mission')) this.start({ mode: 'campaign', difficulty: (q.get('diff') as Difficulty) ?? store.settings.difficulty, seed: 0, mapSize: 96, missionId: q.get('mission')! });
   }
 
   applySettings(): void {

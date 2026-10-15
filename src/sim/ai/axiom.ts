@@ -30,6 +30,11 @@ export const AXIOM_BAL = {
   garrisonBase: 5,
   garrisonPerThreat: 2,
   threatTime: 170,
+  /** emergency defenders spawned per second at an attacked Fabricator/Core/Vault: base + threat/div */
+  emergencyBase: 1,
+  emergencyThreatDiv: 4,
+  /** emergency spawns may borrow from the Surge pool down to this much */
+  emergencyPoolKeep: 100,
   threatCompute: 4000,
   maxRobots: 1400,
 };
@@ -252,6 +257,7 @@ function produceGarrisons(w: World, c: TickCache): void {
 }
 
 function defend(w: World, c: TickCache): void {
+  const A = w.axiom;
   for (const b of c.axiomBuildings) {
     if (w.time - b.attackedAt > 2) continue;
     const attacker = w.get(b.attackerId);
@@ -264,6 +270,23 @@ function defend(w: World, c: TickCache): void {
       u.queue.push({ type: 'guard', x: b.x, y: b.y + b.size / 2 + 2 });
       if (++sent > 24) break;
     }
+    // emergency production: a key structure under attack spends banked Compute — and if need be the
+    // next Surge's budget — on defenders (attacking AXIOM's base makes the next Surge smaller)
+    if (!b.built || (b.kind !== 'fabricator' && b.kind !== 'core' && b.kind !== 'vault')) continue;
+    const home = b.kind === 'vault' ? nearestHome(c, b.x, b.y) : b;
+    if (!home || home.stunUntil > w.time) continue;
+    const n = B.emergencyBase + Math.floor(A.threat / B.emergencyThreatDiv);
+    for (let i = 0; i < n; i++) {
+      const kind = pickRobot(w, c, 'garrison');
+      const cost = UNITS[kind].compute ?? 10;
+      if (A.compute >= cost) A.compute -= cost;
+      else if (A.surgePool >= cost + B.emergencyPoolKeep) A.surgePool -= cost;
+      else break;
+      const u = spawnAt(w, kind, home);
+      if (!u) break;
+      setOrder(u, { type: 'amove', x: ax + (w.rng.next() - 0.5) * 3, y: ay + (w.rng.next() - 0.5) * 3 });
+      u.queue.push({ type: 'guard', x: home.x, y: home.y + home.size / 2 + 2 });
+    }
   }
 }
 
@@ -272,12 +295,14 @@ function expand(w: World, c: TickCache): void {
   const relays = c.axiomBuildings.filter((b) => b.kind === 'relay').length;
   const fabs = c.axiomBuildings.filter((b) => b.kind === 'fabricator').length;
   let kind = 'relay';
-  if (fabs < 1 + Math.floor(A.threat / 2) && relays >= 2 && A.compute >= 260 && w.rng.next() < 0.5) kind = 'fabricator';
+  // rebuild production first: always when none is left, otherwise once the Grid has some reach
+  if (fabs === 0 && A.compute >= 260) kind = 'fabricator';
+  else if (fabs < 1 + Math.floor(A.threat / 2) && relays >= 2 && A.compute >= 260 && w.rng.next() < 0.5) kind = 'fabricator';
   else if (A.threat >= 3 && w.rng.next() < 0.3 && A.compute >= 90) kind = 'lancet';
   else if (relays >= 4 + A.threat * 2) return;
   const cost = kind === 'fabricator' ? 260 : kind === 'lancet' ? 90 : 60;
   if (A.compute < cost) return;
-  const spot = findFrontier(w, c, BUILDINGS[kind].size, kind === 'lancet');
+  const spot = kind === 'fabricator' ? findInterior(w, c, BUILDINGS[kind].size) ?? findFrontier(w, c, BUILDINGS[kind].size, false) : findFrontier(w, c, BUILDINGS[kind].size, kind === 'lancet');
   if (!spot) return;
   A.compute -= cost;
   const b = w.spawnBuilding(kind, AXIOM, spot.x, spot.y, false);
@@ -319,6 +344,29 @@ function findFrontier(w: World, c: TickCache, size: number, nearHumans: boolean)
     for (const t of targets) score = Math.min(score, Math.hypot(t.x - x, t.y - y));
     score += w.rng.next() * 6;
     if (score < bestScore) { bestScore = score; best = { x, y }; }
+  }
+  return best;
+}
+
+/** A spot inside the Grid, away from the humans (new Fabricators are built in the heartland). */
+function findInterior(w: World, c: TickCache, size: number): Pt | null {
+  const hq = humanHQ(w, c);
+  const hx = hq ? hq.x : w.playerStart.x, hy = hq ? hq.y : w.playerStart.y;
+  let best: Pt | null = null, bestScore = -Infinity;
+  for (let attempt = 0; attempt < 160; attempt++) {
+    const x = 2 + Math.floor(w.rng.next() * (w.w - size - 4));
+    const y = 2 + Math.floor(w.rng.next() * (w.h - size - 4));
+    const i = (y + (size >> 1)) * w.w + x + (size >> 1);
+    if (w.creep[i] < 0.8) continue;
+    if (!areaFree(w, x, y, size)) continue;
+    let ok = true;
+    for (const b of c.buildings) {
+      const d = Math.hypot(b.x - (x + size / 2), b.y - (y + size / 2));
+      if ((b.team === HUMAN && d < 14) || (b.team !== HUMAN && d < 5.5)) { ok = false; break; }
+    }
+    if (!ok) continue;
+    const score = Math.hypot(hx - x, hy - y) + w.rng.next() * 8;
+    if (score > bestScore) { bestScore = score; best = { x, y }; }
   }
   return best;
 }
