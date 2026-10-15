@@ -1,4 +1,4 @@
-import { Application, Container, Graphics, Sprite, Texture, TilingSprite } from 'pixi.js';
+import { Application, CanvasSource, Container, Graphics, Sprite, Texture, TilingSprite } from 'pixi.js';
 import { BUILDINGS } from '../sim/data/defs';
 import { AXIOM, HUMAN, type SimEvent } from '../sim/types';
 import type { Entity, World } from '../sim/world';
@@ -20,6 +20,9 @@ interface View {
   overlay: Sprite | null; // scaffold
   kind: string;
   teamKey: string;
+  frames: TexInfo[] | null;
+  live: boolean;
+  turretTi: TexInfo | null;
   stamp: number;
   lastHp: number;
   frameT: number;
@@ -37,14 +40,14 @@ export class GameRenderer {
   root = new Container();
   private terrainLayer = new Container();
   private creepLayer = new Container();
-  private resLayer = new Container();
+  private resLayer = new Container({ isRenderGroup: true });
   private ringLayer = new Container();
-  private bldLayer = new Container();
-  private shadowLayer = new Container();
-  private unitLayer = new Container();
-  private projLayer = new Container();
-  private airShadowLayer = new Container();
-  private airLayer = new Container();
+  private bldLayer = new Container({ isRenderGroup: true });
+  private shadowLayer = new Container({ isRenderGroup: true });
+  private unitLayer = new Container({ isRenderGroup: true });
+  private projLayer = new Container({ isRenderGroup: true });
+  private airShadowLayer = new Container({ isRenderGroup: true });
+  private airLayer = new Container({ isRenderGroup: true });
   private fogLayer = new Container();
   private overlayG = new Graphics();
   private barG = new Graphics();
@@ -62,6 +65,8 @@ export class GameRenderer {
   private creepPattern: TilingSprite | null = null;
   private creepTick = -1;
   private fogTick = -1;
+  private ownedTex: Texture[] = [];
+  private seen = new Set<number>();
   private projSprites: Sprite[] = [];
   private projGlow: Sprite[] = [];
   private explosionFrames: Texture[] = [];
@@ -94,6 +99,12 @@ export class GameRenderer {
     this.app.stage.addChild(this.root, this.screenG);
   }
 
+  private canvasTex(c: HTMLCanvasElement): Texture {
+    const t = new Texture({ source: new CanvasSource({ resource: c, scaleMode: 'linear' }) });
+    this.ownedTex.push(t);
+    return t;
+  }
+
   // ---------------------------------------------------------------- world setup
   setWorld(w: World, terrain: TerrainRenderer | null): void {
     this.clear();
@@ -106,9 +117,7 @@ export class GameRenderer {
         let canvas: HTMLCanvasElement;
         if (terrain) canvas = terrain.renderTerrainChunk(map, cx, cy, tw, th, TILE);
         else canvas = this.fallbackTerrain(w, cx, cy, tw, th);
-        const tex = Texture.from(canvas);
-        tex.source.scaleMode = 'linear';
-        const sp = new Sprite(tex);
+        const sp = new Sprite(this.canvasTex(canvas));
         sp.position.set(cx * TILE, cy * TILE);
         sp.width = tw * TILE; sp.height = th * TILE;
         this.terrainLayer.addChild(sp);
@@ -119,10 +128,8 @@ export class GameRenderer {
     this.creepCanvas.width = w.w; this.creepCanvas.height = w.h;
     this.creepMaskCanvas = document.createElement('canvas');
     this.creepMaskCanvas.width = w.w; this.creepMaskCanvas.height = w.h;
-    this.creepTex = Texture.from(this.creepCanvas);
-    this.creepTex.source.scaleMode = 'linear';
-    this.creepMaskTex = Texture.from(this.creepMaskCanvas);
-    this.creepMaskTex.source.scaleMode = 'linear';
+    this.creepTex = this.canvasTex(this.creepCanvas);
+    this.creepMaskTex = this.canvasTex(this.creepMaskCanvas);
     const tint = new Sprite(this.creepTex);
     tint.scale.set(TILE);
     this.creepLayer.addChild(tint);
@@ -133,13 +140,11 @@ export class GameRenderer {
     mask.scale.set(TILE);
     this.creepLayer.addChild(this.creepPattern, mask);
     this.creepPattern.mask = mask;
-    this.creepPattern.blendMode = 'add';
     // fog
     this.fogCanvas = document.createElement('canvas');
     this.fogCanvas.width = w.w; this.fogCanvas.height = w.h;
     this.fogData = this.fogCanvas.getContext('2d')!.createImageData(w.w, w.h);
-    this.fogTex = Texture.from(this.fogCanvas);
-    this.fogTex.source.scaleMode = 'linear';
+    this.fogTex = this.canvasTex(this.fogCanvas);
     const fog = new Sprite(this.fogTex);
     fog.scale.set(TILE);
     this.fogLayer.addChild(fog);
@@ -160,16 +165,27 @@ export class GameRenderer {
   }
 
   clear(): void {
-    for (const v of this.views.values()) v.root.destroy({ children: true });
+    for (const v of this.views.values()) { v.root.destroy({ children: true }); v.shadow?.destroy(); }
     this.views.clear();
-    this.terrainLayer.removeChildren().forEach((c) => c.destroy({ texture: true, textureSource: true } as never));
+    this.seen.clear();
+    this.terrainLayer.removeChildren().forEach((c) => c.destroy());
     this.creepLayer.removeChildren().forEach((c) => c.destroy());
     this.fogLayer.removeChildren().forEach((c) => c.destroy());
     for (const s of this.projSprites) s.destroy();
     for (const s of this.projGlow) s.destroy();
     this.projSprites = []; this.projGlow = [];
     this.fx.clear();
+    for (const t of this.ownedTex) t.destroy(true);
+    this.ownedTex = [];
+    this.creepTex = this.creepMaskTex = this.fogTex = null;
     this.world = null;
+  }
+
+  /** Tear down everything this renderer added to the stage (atlas textures are shared and kept). */
+  destroy(): void {
+    this.clear();
+    this.root.destroy({ children: true });
+    this.screenG.destroy();
   }
 
   // ---------------------------------------------------------------- coordinates
@@ -203,6 +219,7 @@ export class GameRenderer {
 
   // ---------------------------------------------------------------- per-frame
   private adaptTint = 0xffffff;
+  private frameDt = 1 / 60;
   private computeAdaptTint(w: World): void {
     const r = w.axiom.resist;
     let top: 'kinetic' | 'energy' | 'explosive' = 'kinetic';
@@ -217,6 +234,7 @@ export class GameRenderer {
     const w = this.world;
     if (!w) return;
     this.time += dt;
+    this.frameDt = dt;
     if (w.tick % 20 === 0) this.computeAdaptTint(w);
     this.clampCamera();
     const z = this.cam.zoom;
@@ -241,7 +259,16 @@ export class GameRenderer {
     for (const e of w.entities) {
       if (!e.alive) continue;
       const vis = this.isShown(w, e);
-      if (!vis) { const v = this.views.get(e.id); if (v) v.root.visible = false; if (v) v.stamp = stamp; continue; }
+      if (!vis) { const v = this.views.get(e.id); if (v) { v.root.visible = false; if (v.shadow) v.shadow.visible = false; v.stamp = stamp; } continue; }
+      // enemy structures under fog keep their last-seen look
+      if (e.isBuilding && e.team !== HUMAN && !w.revealAll) {
+        if (this.bldVisible(w, e)) this.seen.add(e.id);
+        else {
+          const v = this.views.get(e.id);
+          if (v && this.seen.has(e.id)) { v.root.visible = true; v.stamp = stamp; v.live = false; continue; }
+          if (!this.seen.has(e.id) && e.team === AXIOM) { if (v) { v.root.visible = false; v.stamp = stamp; } continue; }
+        }
+      }
       const ix = e.px + (e.x - e.px) * alpha, iy = e.py + (e.y - e.py) * alpha;
       const r = e.isBuilding ? e.size : 2;
       const onScreen = ix > vb.x0 - r - m && ix < vb.x1 + r + m && iy > vb.y0 - r - m && iy < vb.y1 + r + m;
@@ -249,6 +276,7 @@ export class GameRenderer {
       if (!onScreen) { if (v) { v.root.visible = false; if (v.shadow) v.shadow.visible = false; v.stamp = stamp; } continue; }
       if (!v) { v = this.createView(e); this.views.set(e.id, v); }
       v.stamp = stamp;
+      v.live = true;
       this.updateView(w, e, v, ix, iy, dt);
     }
     for (const [id, v] of this.views) {
@@ -262,6 +290,11 @@ export class GameRenderer {
     this.renderOverlays(w, alpha, dt);
     this.fx.update(dt);
     this.renderScreen();
+  }
+
+  private bldVisible(w: World, e: Entity): boolean {
+    const a = e.tx + 0.5, b = e.ty + 0.5, c = e.tx + e.size - 0.5, d = e.ty + e.size - 0.5;
+    return w.isVisible(e.x, e.y) || w.isVisible(a, b) || w.isVisible(c, b) || w.isVisible(a, d) || w.isVisible(c, d);
   }
 
   private isShown(w: World, e: Entity): boolean {
@@ -304,7 +337,7 @@ export class GameRenderer {
     } else {
       this.resLayer.addChild(root);
     }
-    return { id: e.id, root, body, shadow, turret, overlay, kind: '', teamKey: '', stamp: 0, lastHp: e.hp, frameT: Math.random() * 10, wallMask: -1 };
+    return { id: e.id, root, body, shadow, turret, overlay, kind: '', teamKey: '', frames: null, turretTi: null, live: true, stamp: 0, lastHp: e.hp, frameT: Math.random() * 10, wallMask: -1 };
   }
 
   private setTex(sp: Sprite, ti: TexInfo): void {
@@ -321,12 +354,17 @@ export class GameRenderer {
       const nFrames = e.udef?.armor === 'armored' && !e.isRobot ? 2 : 4;
       const fps = e.isRobot ? 9 : 7;
       const frame = e.moving ? Math.floor(v.frameT * fps) % nFrames : 0;
-      const ti = this.bank.pick(`unit:${e.kind}:${tk}:${e.flying ? Math.floor(this.time * 20) % 2 : frame}`, `unit:${e.kind}:${tk}:0`);
+      if (v.teamKey !== tk || !v.frames) {
+        v.teamKey = tk;
+        v.frames = [0, 1, 2, 3].map((f) => this.bank.pick(`unit:${e.kind}:${tk}:${f}`, `unit:${e.kind}:${tk}:0`));
+        v.turretTi = v.turret ? this.bank.get(`unit:${e.kind}:${tk}:turret`) : null;
+      }
+      const ti = v.frames[e.flying ? Math.floor(this.time * 20) % 2 : frame];
       this.setTex(v.body, ti);
       v.body.scale.set(ART_SCALE);
       v.body.rotation = e.angle;
       if (v.turret) {
-        this.setTex(v.turret, this.bank.get(`unit:${e.kind}:${tk}:turret`));
+        this.setTex(v.turret, v.turretTi!);
         v.turret.scale.set(ART_SCALE);
         v.turret.rotation = e.turretAngle;
       }
@@ -345,15 +383,18 @@ export class GameRenderer {
       if (stunned && Math.random() < dt * 8) this.fx.spawn('fx:spark', px + (Math.random() - 0.5) * 20, py + (Math.random() - 0.5) * 20, { life: 0.2, s0: 0.4, s1: 0.1, tint: 0x80c0ff, add: true });
       v.root.alpha = 1;
     } else if (e.isBuilding) {
-      let key: string;
-      if (e.bdef?.wall) {
-        const mask = this.wallMask(w, e);
-        key = `bld:wall:human:${mask}`;
-      } else key = `bld:${e.kind}:${tk}`;
-      this.setTex(v.body, this.bank.pick(key, `bld:${e.kind}:human`, `bld:${e.kind}:axiom`));
+      const mask = e.bdef?.wall ? this.wallMask(w, e) : -1;
+      if (v.teamKey !== tk || v.wallMask !== mask || !v.frames) {
+        v.teamKey = tk;
+        v.wallMask = mask;
+        const key = mask >= 0 ? `bld:wall:human:${mask}` : `bld:${e.kind}:${tk}`;
+        v.frames = [this.bank.pick(key, `bld:${e.kind}:human`, `bld:${e.kind}:axiom`)];
+        v.turretTi = v.turret ? this.bank.pick(`bld:${e.kind}:${tk}:turret`, `bld:${e.kind}:axiom:turret`, `bld:${e.kind}:human:turret`) : null;
+      }
+      this.setTex(v.body, v.frames[0]);
       v.body.scale.set(ART_SCALE);
       if (v.turret) {
-        this.setTex(v.turret, this.bank.pick(`bld:${e.kind}:${tk}:turret`, `bld:${e.kind}:axiom:turret`, `bld:${e.kind}:human:turret`));
+        this.setTex(v.turret, v.turretTi!);
         v.turret.scale.set(ART_SCALE);
         v.turret.rotation = e.turretAngle;
         v.turret.visible = e.built;
@@ -432,7 +473,7 @@ export class GameRenderer {
       g.scale.set(0.35);
       g.tint = p.team === AXIOM ? 0xff4060 : 0xffa040;
       g.alpha = 0.8;
-      if (Math.random() < 0.6) this.fx.spawn('fx:smoke', x, y - h, { life: 0.6, s0: 0.25, s1: 0.6, a0: 0.4, a1: 0, tint: 0x555050 });
+      if (Math.random() < this.frameDt * 24 && this.fx.inView(x, y)) this.fx.spawn('fx:smoke', x, y - h, { life: 0.6, s0: 0.25, s1: 0.6, a0: 0.4, a1: 0, tint: 0x555050 });
     }
   }
 
@@ -478,6 +519,7 @@ export class GameRenderer {
       }
       // health bars
       const damaged = e.hp < e.maxHp - 0.5;
+      if (!v.live) continue; // fogged enemy structure: no live info
       if ((e.isUnit || e.isBuilding) && e.kind !== 'server_farm' && (sel || hov || damaged || (e.isBuilding && !e.built))) {
         const wpx = e.isBuilding ? e.size * T * 0.8 : Math.max(18, e.radius * T * 2.2);
         const by = e.isBuilding ? e.ty * T - 6 : y - e.radius * T - 9;

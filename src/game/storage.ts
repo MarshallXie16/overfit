@@ -25,7 +25,11 @@ function load<T>(key: string, def: T): T {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return structuredClone(def);
-    return { ...structuredClone(def), ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return structuredClone(def);
+    const out = structuredClone(def) as Record<string, unknown>;
+    for (const [k, v] of Object.entries(parsed)) if (v !== null && v !== undefined && (typeof v === typeof out[k] || out[k] === undefined)) out[k] = v;
+    return out as T;
   } catch {
     return structuredClone(def);
   }

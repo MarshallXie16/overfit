@@ -10,6 +10,8 @@ import { AXIOM, DT, HUMAN } from './types';
 import type { Entity, World } from './world';
 
 const cache = new TickCache();
+/** max collision radius vs. terrain / buildings (tiles); must be < 0.5 so every unit fits a 1-tile gap */
+const TERRAIN_R = 0.42;
 const sepBuf: number[] = [];
 
 export function getCache(): TickCache { return cache; }
@@ -71,15 +73,9 @@ function integrate(w: World, units: Entity[]): void {
     const pm = Math.hypot(px, py);
     if (pm > 0.12) { px *= 0.12 / pm; py *= 0.12 / pm; }
     dx += px; dy += py;
-    if (dx === 0 && dy === 0) continue;
-    let nx = e.x + dx, ny = e.y + dy;
-    if (e.flying) {
-      e.x = Math.max(0.5, Math.min(w.w - 0.5, nx));
-      e.y = Math.max(0.5, Math.min(w.h - 0.5, ny));
-      continue;
-    }
-    // currently inside a blocked tile (building placed on top / pushed) → escape
-    if (!walkable(w, e.x, e.y)) {
+    // currently inside a blocked tile (spawned / building placed on top / pushed) → escape,
+    // even when standing still
+    if (!e.flying && !walkable(w, e.x, e.y)) {
       const nw = nearestWalkable(w.grid, Math.floor(e.x), Math.floor(e.y), 6);
       if (nw) {
         const tx = nw.tx + 0.5 - e.x, ty = nw.ty + 0.5 - e.y, td = Math.hypot(tx, ty) || 1;
@@ -88,13 +84,21 @@ function integrate(w: World, units: Entity[]): void {
       }
       continue;
     }
+    if (dx === 0 && dy === 0) continue;
+    let nx = e.x + dx, ny = e.y + dy;
+    if (e.flying) {
+      e.x = Math.max(0.5, Math.min(w.w - 0.5, nx));
+      e.y = Math.max(0.5, Math.min(w.h - 0.5, ny));
+      continue;
+    }
     if (!walkable(w, nx, ny)) {
       if (walkable(w, nx, e.y)) ny = e.y;
       else if (walkable(w, e.x, ny)) nx = e.x;
       else { nx = e.x; ny = e.y; }
     }
-    // push out of neighbouring blocked tiles (circle vs AABB)
-    const r = e.radius * 0.85;
+    // push out of neighbouring blocked tiles (circle vs AABB). Capped so that big units
+    // (brutes, tanks, the Colossus) still fit the 1-tile alleys that pathing/flow fields use.
+    const r = Math.min(e.radius * 0.85, TERRAIN_R);
     const x0 = Math.floor(nx - r), x1 = Math.floor(nx + r), y0 = Math.floor(ny - r), y1 = Math.floor(ny + r);
     for (let ty = y0; ty <= y1; ty++) {
       for (let tx = x0; tx <= x1; tx++) {

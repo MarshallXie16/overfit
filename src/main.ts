@@ -99,7 +99,12 @@ class App {
     this.disposeSession();
     const w = generateWorld({ mode: 'skirmish', difficulty: 'recruit', seed: 4242 + Math.floor(Math.random() * 1000), mapSize: 72 }, { scrapFields: 8, startScrap: 1500 });
     w.axiom.surgeT = 40;
-    this.session = new Session(this.app, this.bank, this.atlas, this.terrainApi, w, this.hudLayer, { attract: true });
+    const s = new Session(this.app, this.bank, this.atlas, this.terrainApi, w, this.hudLayer, {
+      attract: true,
+      // the title-screen demo restarts itself when its game ends
+      onEnd: () => setTimeout(() => { if (this.session === s) this.startAttract(); }, 4000),
+    });
+    this.session = s;
   }
 
   disposeSession(): void {
@@ -111,7 +116,7 @@ class App {
     this.menus.close();
     this.disposeSession();
     const mission = o.missionId ? MISSIONS.find((m) => m.id === o.missionId) : undefined;
-    const difficulty = mission?.difficulty && o.difficulty === 'veteran' ? o.difficulty : o.difficulty;
+    const difficulty = mission?.difficulty ?? o.difficulty;
     const settings = { mode: o.mode, difficulty, seed: mission ? mission.seed : o.seed, mapSize: mission ? mission.mapSize : o.mapSize, missionId: o.missionId };
     const w = generateWorld(settings, mission ? mission.gen : o.mode === 'endless' ? { core: true, vaults: 2 } : {});
     if (o.mode === 'endless') {
@@ -130,7 +135,7 @@ class App {
     }
     this.session = new Session(this.app, this.bank, this.atlas, this.terrainApi, w, this.hudLayer, {
       onEnd: (s) => this.menus.end(s),
-      onMenu: (s) => { s.setPaused(true); this.menus.pause(s); },
+      onMenu: (s) => { if (s.ended) return; const was = s.world.paused; s.setPaused(true); this.menus.pause(s, was); },
     });
     if (this.atlas) this.session.hud?.setMinimapBase(renderMinimapTerrain({ w: w.w, h: w.h, terrain: w.terrain, seed: w.settings.seed }));
     this.applySettings();

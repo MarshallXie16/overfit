@@ -47,6 +47,40 @@ await page.click('[data-a=quit]');
 await page.click('[data-a=settings]');
 await page.waitForSelector('[data-s=music]');
 check('settings opens', true);
+// regression: briefing → deploy → Esc → Quit → Enter must not soft-lock the title (leaked Enter listener)
+await page.click('[data-a=back]');
+await page.waitForSelector('.logo');
+await page.click('[data-a=campaign]');
+await page.click('[data-m]:not([disabled])');
+await page.waitForSelector('[data-a=go]');
+await page.keyboard.press('Escape'); // ignored while the briefing is up
+await page.waitForTimeout(150);
+check('esc ignored during briefing', await page.isVisible('[data-a=go]'));
+await page.keyboard.press('Enter');
+await page.waitForTimeout(500);
+await page.keyboard.press('Escape');
+await page.waitForSelector('[data-a=quit]');
+await page.click('[data-a=quit]');
+await page.waitForSelector('.logo');
+await page.keyboard.press('Enter');
+await page.waitForTimeout(300);
+check('title survives stray Enter', await page.isVisible('.logo'));
+// regression: Esc toggles pause reliably several times; P is ignored while the menu is open
+await page.click('[data-a=skirmish]');
+await page.click('[data-a=go]');
+await page.waitForTimeout(800);
+let toggles = 0;
+for (let i = 0; i < 3; i++) {
+  await page.keyboard.press('Escape'); await page.waitForTimeout(120);
+  const open = await page.isVisible('[data-a=resume]');
+  await page.keyboard.press('p'); await page.waitForTimeout(60);
+  const stillPaused = await page.evaluate(() => window.overfit.session.world.paused);
+  await page.keyboard.press('Escape'); await page.waitForTimeout(120);
+  const closed = !(await page.isVisible('[data-a=resume]'));
+  const running = await page.evaluate(() => !window.overfit.session.world.paused);
+  if (open && stillPaused && closed && running) toggles++;
+}
+check('esc pause toggles x3 and P blocked while open', toggles === 3, `${toggles}/3`);
 console.log(`errors: ${errors.length}`); for (const e of errors.slice(0, 8)) console.log('  ERR', e);
 await browser.close();
 process.exit(ok.every(Boolean) && !errors.length ? 0 : 1);

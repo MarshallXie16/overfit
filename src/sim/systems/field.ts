@@ -122,8 +122,23 @@ export function updateFields(w: World, c: TickCache): void {
     for (const u of c.units) if (u.team === HUMAN) goals.push((u.y | 0) * w.w + (u.x | 0));
   }
   if (goals.length) f.build(w.grid, goals, 'siege');
-  // per-target fields for raids are cached by key and invalidated here
-  for (const k of [...w.fields.keys()]) if (k !== 'human') w.fields.delete(k);
+  // per-target raid fields: drop unused ones / dead targets, rebuild the rest against the new grid
+  if (w.fields.size > 1) {
+    const used = new Set<string>();
+    for (const u of c.units) if (u.order?.type === 'flow' && u.order.field !== 'human') used.add(u.order.field);
+    for (const [k, rf] of [...w.fields]) {
+      if (k === 'human') continue;
+      const t = k.startsWith('raid:') ? w.get(+k.slice(5)) : undefined;
+      if (!t || t.team !== HUMAN || !t.isBuilding || !used.has(k)) { w.fields.delete(k); continue; }
+      rf.build(w.grid, footprint(w, t), 'siege');
+    }
+  }
+}
+
+function footprint(w: World, b: { tx: number; ty: number; size: number }): number[] {
+  const goals: number[] = [];
+  for (let y = b.ty; y < b.ty + b.size; y++) for (let x = b.tx; x < b.tx + b.size; x++) goals.push(y * w.w + x);
+  return goals;
 }
 
 export function fieldTo(w: World, key: string, goals: number[]): FlowField {

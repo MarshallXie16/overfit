@@ -1,3 +1,4 @@
+import './_set';
 import { Bot } from '../src/sim/bot';
 import { generateWorld } from '../src/sim/mapgen';
 import { step } from '../src/sim/step';
@@ -14,7 +15,7 @@ for (let i = 0; i < t1*TICK_HZ && !w.result; i++) {
   if (w.time >= t0 && i % (every*TICK_HZ) === 0) {
     const hq = w.entities.find((e) => e.alive && e.kind === 'hq')!;
     const army = w.entities.filter((e) => e.alive && e.team === HUMAN && e.isUnit && e.kind !== 'engineer');
-    const rob = w.entities.filter((e) => e.alive && e.team === AXIOM && e.isUnit && Math.hypot(e.x-hq.x, e.y-hq.y) < 30);
+    const rob = w.entities.filter((e) => e.alive && e.team === AXIOM && e.isUnit && Math.hypot(e.x-hq.x, e.y-hq.y) < +opt("R","30"));
     const tur = w.entities.filter((e) => e.alive && e.team === HUMAN && e.isBuilding && (e.bdef?.weapon || e.kind==='wall'));
     const c = (arr: typeof army) => arr.length ? `(${(arr.reduce((a,e)=>a+e.x,0)/arr.length).toFixed(0)},${(arr.reduce((a,e)=>a+e.y,0)/arr.length).toFixed(0)})` : '-';
     const kinds = (arr: typeof army) => { const m = new Map<string,number>(); for (const e of arr) m.set(e.kind,(m.get(e.kind)??0)+1); return [...m].map(([k,v])=>k.slice(0,4)+v).join(' '); };

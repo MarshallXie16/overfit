@@ -41,9 +41,9 @@ const MAX_PARTICLES = 2500;
 
 export class Fx {
   bank: TextureBank;
-  addLayer = new Container();
-  normLayer = new Container();
-  decalLayer = new Container();
+  addLayer = new Container({ isRenderGroup: true });
+  normLayer = new Container({ isRenderGroup: true });
+  decalLayer = new Container({ isRenderGroup: true });
   lineG = new Graphics();
   private parts: Particle[] = [];
   private pool: Sprite[] = [];
@@ -204,11 +204,11 @@ export class Fx {
       if (l.glow) {
         g.moveTo(l.pts[0], l.pts[1]);
         for (let i = 2; i < l.pts.length; i += 2) g.lineTo(l.pts[i], l.pts[i + 1]);
-        g.stroke({ width: l.width + l.glow, color: l.color, alpha: a * 0.25, cap: 'round', join: 'round' });
+        g.stroke({ width: l.width + l.glow, color: l.color, alpha: a * 0.25 });
       }
       g.moveTo(l.pts[0], l.pts[1]);
       for (let i = 2; i < l.pts.length; i += 2) g.lineTo(l.pts[i], l.pts[i + 1]);
-      g.stroke({ width: l.width, color: l.color, alpha: a, cap: 'round', join: 'round' });
+      g.stroke({ width: l.width, color: l.color, alpha: a });
       this.lines[k++] = l;
     }
     this.lines.length = k;

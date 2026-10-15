@@ -8,8 +8,32 @@ import { DIFF, type Entity, type World } from '../world';
 
 const ROBOTS = ['skitter', 'gunner', 'sapper', 'brute', 'lancer', 'wasp', 'warden'];
 const BASE_W: Record<string, number> = { skitter: 10, gunner: 7, sapper: 2.5, brute: 2.5, lancer: 2.5, wasp: 2.5, warden: 1 };
-const SURGE_SHARE = 0.6;
-const MAX_ROBOTS = 1400;
+/**
+ * AXIOM balance constants. Mutable so tools/headless.ts can override them for balance experiments
+ * (`--set AXIOM_BAL.rampDiv=300`); the game never changes them at runtime.
+ */
+export const AXIOM_BAL = {
+  /** compute/s before structures & ramp */
+  baseRate: 0.4,
+  farmCompute: 0.8,
+  creepCompute: 0.0004,
+  /** ramp(t) = 1 + (t / rampDiv) ^ rampExp */
+  rampDiv: 240,
+  rampExp: 1.25,
+  /** share of income banked for the next Surge */
+  surgeShare: 0.6,
+  /** Surge n budget multiplier = min(1, surgeDamp0 + surgeDampStep * (n - 1)) */
+  surgeDamp0: 0.45,
+  surgeDampStep: 0.15,
+  surgeMinInterval: 95,
+  surgeIntervalStep: 4,
+  garrisonBase: 5,
+  garrisonPerThreat: 2,
+  threatTime: 170,
+  threatCompute: 4000,
+  maxRobots: 1400,
+};
+const B = AXIOM_BAL;
 
 export interface AxiomTuning {
   /** multiplier on everything spawned (mission scripting) */
@@ -48,20 +72,20 @@ export function updateAxiom(w: World, c: TickCache): void {
 
   // ---------------------------------------------------------------- economy (2 Hz)
   if (w.tick % 10 === 0) {
-    let rate = 0.4;
+    let rate = B.baseRate;
     let farms = 0;
     for (const b of c.axiomBuildings) if (b.built) rate += b.bdef!.compute ?? 0;
     for (const b of c.buildings) if (b.kind === 'server_farm' && b.team === AXIOM) farms++;
-    rate += farms * 0.8;
-    rate += A.creepTiles * 0.0004;
-    const ramp = 1 + Math.pow(w.time / 240, 1.25);
+    rate += farms * B.farmCompute;
+    rate += A.creepTiles * B.creepCompute;
+    const ramp = 1 + Math.pow(w.time / B.rampDiv, B.rampExp);
     A.farms = farms;
     A.computeRate = rate * ramp * D.compute * T.aggression;
     const inc = A.computeRate * 0.5;
     A.totalCompute += inc;
-    if (T.surges) { A.surgePool += inc * SURGE_SHARE; A.compute += inc * (1 - SURGE_SHARE); }
+    if (T.surges) { A.surgePool += inc * B.surgeShare; A.compute += inc * (1 - B.surgeShare); }
     else A.compute += inc;
-    A.threat = Math.max(1, Math.min(10, 1 + Math.floor(w.time / 170 + A.totalCompute / 4000)));
+    A.threat = Math.max(1, Math.min(10, 1 + Math.floor(w.time / B.threatTime + A.totalCompute / B.threatCompute)));
     let n = 0;
     for (const u of c.units) if (u.team === AXIOM) n++;
     A.units = n;
@@ -115,7 +139,7 @@ export function updateAxiom(w: World, c: TickCache): void {
     }
     if (A.surgeT <= 0) {
       launchSurge(w, c);
-      A.surgeT = Math.max(95, T.surgeInterval - A.surgeN * 4) * (w.settings.difficulty === 'recruit' ? 1.15 : 1);
+      A.surgeT = Math.max(B.surgeMinInterval, T.surgeInterval - A.surgeN * B.surgeIntervalStep) * (w.settings.difficulty === 'recruit' ? 1.15 : 1);
     }
   }
   trackSurge(w, c);
@@ -191,7 +215,7 @@ export function pickRobot(w: World, c: TickCache, purpose: 'surge' | 'garrison' 
 }
 
 function spawnAt(w: World, kind: string, home: Entity, spread = 2.5): Entity | null {
-  if (w.axiom.units >= MAX_ROBOTS) return null;
+  if (w.axiom.units >= B.maxRobots) return null;
   const a = w.rng.next() * Math.PI * 2;
   const r = home.size / 2 + 0.8 + w.rng.next() * spread;
   let x = home.x + Math.cos(a) * r, y = home.y + Math.sin(a) * r;
@@ -212,7 +236,7 @@ function produceGarrisons(w: World, c: TickCache): void {
   const A = w.axiom;
   const counts = new Map<number, number>();
   for (const u of c.units) if (u.team === AXIOM && u.homeId && u.order?.type === 'guard') counts.set(u.homeId, (counts.get(u.homeId) ?? 0) + 1);
-  const cap = 5 + A.threat * 2;
+  const cap = B.garrisonBase + A.threat * B.garrisonPerThreat;
   for (const b of c.axiomBuildings) {
     if (!b.built || (b.kind !== 'fabricator' && b.kind !== 'core') || b.stunUntil > w.time) continue;
     if ((counts.get(b.id) ?? 0) >= cap) continue;
@@ -371,7 +395,7 @@ function launchSurge(w: World, c: TickCache): void {
   const n = A.surgeN;
   const cascade = n % 4 === 0;
   // early surges are damped: AXIOM is still 'learning' (Surge 1 ≈ 20–25 small robots on Veteran)
-  let budget = A.surgePool * D.surge * Math.min(1, 0.45 + 0.15 * (n - 1));
+  let budget = A.surgePool * D.surge * Math.min(1, B.surgeDamp0 + B.surgeDampStep * (n - 1));
   A.surgePool = 0;
   const homes = c.axiomBuildings.filter((b) => b.built && (b.kind === 'fabricator' || b.kind === 'core'));
   if (!homes.length) return;

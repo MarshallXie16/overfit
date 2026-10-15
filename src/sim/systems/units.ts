@@ -7,8 +7,10 @@ import { acquire, surfaceDist, targetable, type TickCache } from './query';
 import { angDiff, turnToward } from '../util';
 export { turnToward };
 
-export const CARRY_CAP = 10;
-export const GATHER_TIME = 1.6;
+/** Engineer economy (mutable for headless balance experiments: `--set ECON.carry=8`). */
+export const ECON = { carry: 10, gather: 1.6 };
+export const CARRY_CAP = ECON.carry;
+export const GATHER_TIME = ECON.gather;
 const PATH_BUDGET = 14;
 let pathsThisTick = 0;
 
@@ -26,6 +28,7 @@ export function updateUnits(w: World, c: TickCache): void {
 // ------------------------------------------------------------------ helpers
 export function nextOrder(e: Entity): void {
   e.order = e.queue.shift() ?? null;
+  e.loiterAt = 0;
   e.path = null;
   e.targetId = 0;
   e.stuckT = 0;
@@ -38,6 +41,7 @@ export function setOrder(e: Entity, o: Entity['order'], queue = false): void {
   if (queue && (e.order || e.queue.length)) { e.queue.push(o!); return; }
   e.queue.length = 0;
   e.order = o;
+  e.loiterAt = 0;
   e.path = null;
   e.targetId = 0;
   e.stuckT = 0;
@@ -113,7 +117,7 @@ export function moveTo(w: World, e: Entity, gx: number, gy: number, arrive = 0.3
   const wx = wp.x - e.x, wy = wp.y - e.y;
   const wd = Math.hypot(wx, wy);
   const last = e.pathI === path.length - 1;
-  if (last && wd < 0.3) { e.path = null; e.stuckT = 0; return true; }
+  if (last && wd < Math.min(0.3, Math.max(0.05, arrive))) { e.path = null; e.stuckT = 0; return true; }
   // stuck detection
   if (wd < e.lastDist - 0.03) { e.lastDist = wd; e.stuckT = 0; }
   else {
@@ -184,6 +188,14 @@ export function engage(w: World, c: TickCache, e: Entity, t: Entity, allowMove =
     return true;
   }
   if (!allowMove) return d <= reach + 0.5;
+  if (wpn.melee && d < reach + 0.75 && !e.flying) {
+    // final approach: step straight at the closest point of the target's surface
+    let px = t.x, py = t.y;
+    if (t.cat === 'building') { px = Math.max(t.tx, Math.min(e.x, t.tx + t.size)); py = Math.max(t.ty, Math.min(e.y, t.ty + t.size)); }
+    const dx = px - e.x, dy = py - e.y, dd = Math.hypot(dx, dy) || 1;
+    setVel(w, e, dx / dd, dy / dd, 0.6);
+    return true;
+  }
   if (tooClose) {
     // back away from target
     const dx = e.x - t.x, dy = e.y - t.y, dd = Math.hypot(dx, dy) || 1;
@@ -304,8 +316,31 @@ function guard(w: World, c: TickCache, e: Entity, o: { x: number; y: number }): 
 function flow(w: World, c: TickCache, e: Entity, o: { field: string; tx: number; ty: number }): void {
   const t = tryAcquire(w, c, e);
   if (t && engage(w, c, e, t)) return;
-  if (e.flying) { moveTo(w, e, o.tx, o.ty, 1.5); return; }
-  const f = w.fields.get(o.field);
+  if (e.flying) {
+    // flyers ignore flow fields: head for the raid target, else the nearest hostile structure
+    if (w.time >= e.loiterAt) {
+      e.loiterAt = w.time + 2 + (e.id % 7) * 0.1;
+      let tx = o.tx, ty = o.ty;
+      const raid = o.field.startsWith('raid:') ? w.get(+o.field.slice(5)) : undefined;
+      if (raid && raid.isBuilding && raid.team !== e.team && raid.team !== 0) { tx = raid.x; ty = raid.y; }
+      else {
+        let bd = Infinity;
+        for (const b of e.team === AXIOM ? c.humanBuildings : c.axiomBuildings) {
+          const d = Math.hypot(b.x - e.x, b.y - e.y);
+          if (d < bd) { bd = d; tx = b.x; ty = b.y; }
+        }
+      }
+      e.lx = tx; e.ly = ty;
+    }
+    moveTo(w, e, e.lx, e.ly, 1.5);
+    return;
+  }
+  let f = w.fields.get(o.field);
+  if (!f && o.field !== 'human') {
+    // per-target field was invalidated (target destroyed / map changed): press on toward the base
+    o.field = 'human';
+    f = w.fields.get('human');
+  }
   if (!f) { moveTo(w, e, o.tx, o.ty, 1.5); return; }
   const s = f.sample(e.x, e.y);
   if (!isFinite(s.dist)) { moveTo(w, e, o.tx, o.ty, 1.5); return; }
@@ -393,7 +428,7 @@ function returnCargo(w: World, c: TickCache, e: Entity, isOrder: boolean): void 
 
 function harvest(w: World, c: TickCache, e: Entity, o: { type: 'harvest'; id: number }): void {
   let node = w.get(o.id);
-  if (e.carrying >= CARRY_CAP) { returnCargo(w, c, e, false); return; }
+  if (e.carrying >= ECON.carry) { returnCargo(w, c, e, false); return; }
   if (!node || node.amount <= 0) {
     const lx = node ? node.x : e.x, ly = node ? node.y : e.y;
     node = findNode(w, c, lx, ly, 14, node ? node.cat === 'wreck' : false) ?? undefined;
@@ -413,9 +448,9 @@ function harvest(w: World, c: TickCache, e: Entity, o: { type: 'harvest'; id: nu
   }
   e.angle = turnToward(e.angle, Math.atan2(node.y - e.y, node.x - e.x), 10 * DT);
   e.gatherT += DT * w.human.harvestMul * (node.cat === 'wreck' ? 1.5 : 1);
-  if (e.gatherT >= GATHER_TIME) {
+  if (e.gatherT >= ECON.gather) {
     e.gatherT = 0;
-    const take = Math.min(CARRY_CAP - e.carrying, node.amount);
+    const take = Math.min(ECON.carry - e.carrying, node.amount);
     node.amount -= take;
     e.carrying += take;
     w.emit({ t: 'harvest', x: node.x, y: node.y });

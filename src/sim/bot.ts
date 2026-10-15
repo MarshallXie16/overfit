@@ -1,9 +1,10 @@
 import { BUILDINGS, RESEARCH, UNITS } from './data/defs';
+import { AXIOM_BAL } from './ai/axiom';
 import { FlowField, WALK_OPEN, WALK_SLOW } from './path';
 import { protocolAvailable } from './systems/economy';
 import { hackEligible } from './systems/units';
 import { AXIOM, DAMAGE_TYPES, HUMAN, TYPE_VS_ARMOR, type DamageType, type Pt } from './types';
-import { Rng, type Entity, type Order, type World } from './world';
+import { DIFF, Rng, type Entity, type Order, type World } from './world';
 
 /**
  * Scripted human player used by the headless soak/balance runs and the title-screen attract mode.
@@ -47,7 +48,7 @@ export const BOT_LEVELS: BotConfig[] = [
   },
   {
     engineers: 15, thinkEvery: 1, adapt: true, protocols: true, micro: true, walls: true,
-    turretRate: 1, maxTurrets: 10, maxBarracks: 4, maxFactories: 2, maxLabs: 1, maxSites: 2, netrunners: 3,
+    turretRate: 1, maxTurrets: 10, maxBarracks: 4, maxFactories: 2, maxLabs: 2, maxSites: 2, netrunners: 3,
     attackValue: 1500, attackRatio: 1.5, strikeShare: 0.8,
   },
   {
@@ -119,6 +120,8 @@ export class Bot {
   private wallsFor = new Set<number>();
   private farmHold = 0;
   private hashBuf: number[] = [];
+  /** last decision summary (debug / tooling) */
+  note = '';
   /** smoothed scrap income (per second) */
   income = 0;
   private gathered: number[] = [];
@@ -483,14 +486,18 @@ export class Bot {
     for (const r of this.s.resources) {
       const dd = this.dropDist(r);
       const wreck = r.cat === 'wreck';
-      if (dd > (wreck ? 16 : 30)) continue;
-      if (wreck && r.expire - w.time < 8) continue;
+      if (dd > (wreck ? 22 : 30)) continue;
+      const de = Math.hypot(r.x - e.x, r.y - e.y);
+      if (wreck && r.expire - w.time < de / 2.6 + 2) continue;
       const i = (r.y | 0) * w.w + (r.x | 0);
       if (w.creep[i] > 0.3) continue;
       const load = this.nodeLoad.get(r.id) ?? 0;
-      if (wreck && load * 10 >= r.amount) continue;
-      let sc = dd * 1.2 + Math.hypot(r.x - e.x, r.y - e.y) * 0.25 + load * load * 1.6;
-      if (wreck) sc -= 4;
+      let sc: number;
+      if (wreck) {
+        if (load >= Math.ceil(r.amount / 10)) continue;
+        // wrecks decay: grab them first (they are usually right at the turret line)
+        sc = dd * 0.8 + de * 0.3 + load * 2 - 10;
+      } else sc = dd * 1.2 + de * 0.25 + load * load * 1.6;
       if (sc >= bs) continue;
       if (this.dangerAt(r.x, r.y, 7)) continue;
       bs = sc; best = r;
@@ -528,11 +535,14 @@ export class Bot {
     // production capacity (scrap/s a producer can turn into units) vs. income
     const capacity = nB * 4.5 + nF * 8;
     const income = this.income;
-    const floating = this.scrap > 450 + this.reserve;
-    const wantProducer = t > 75 && (capacity < income * 0.85 || floating) && nB + nF > 0 && this.count('barracks', true) === nB && this.count('factory', true) === nF;
+    // add a producer only when scrap is piling up while every queue is busy (or capacity is far below income)
+    let queuesBusy = true;
+    for (const k of ['barracks', 'factory']) for (const b of s.byKind.get(k) ?? []) if (b.id && b.built && b.prod.length < 2) queuesBusy = false;
+    const floating = this.scrap > 300 + this.reserve && queuesBusy;
+    const wantProducer = t > 75 && (capacity < income * 0.45 || floating) && nB + nF > 0 && this.count('barracks', true) === nB && this.count('factory', true) === nF;
     if (nB < 1) wants.push({ kind: 'barracks', save: true });
     if (powerFree < 3 + (nB ? 2 : 0) && this.count('generator') - this.count('generator', true) < 1) wants.push({ kind: 'generator', save: true });
-    if (popFree < 3 + producers * 2 && H.popCap + pendingPop < 150 && (this.count('habitat') - this.count('habitat', true)) < (producers > 3 ? 2 : 1)) wants.push({ kind: 'habitat', save: true });
+    if (popFree < 2 + producers * 1.5 && H.popCap + pendingPop < 150 && this.count('habitat') - this.count('habitat', true) < 1) wants.push({ kind: 'habitat', save: true });
     if (turrets < turretWant && nB > 0) wants.push({ kind: this.pickTurret(w), save: surgeSoon || turrets < 2, at: () => this.turretSpot(w) });
     if (nL < 1 && this.count('barracks', true) > 0 && (t > 110 || this.scrap > 350)) wants.push({ kind: 'lab', save: t > 150 });
     if (wantProducer) {
@@ -543,7 +553,7 @@ export class Bot {
     const depot = this.depotPlan(w);
     if (depot) wants.push({ kind: 'depot', save: false, at: () => depot });
     if (nF < 1 && this.count('lab', true) > 0 && t > 300) wants.push({ kind: 'factory', save: t > 400 });
-    if (nL < 2 && t > 700 && cfg.maxLabs >= 2 && this.scrap > 450) wants.push({ kind: 'lab', save: false });
+    if (nL < 2 && cfg.maxLabs >= 2 && this.count('lab', true) > 0 && (t > 600 || this.data > 120) && this.scrap > 300) wants.push({ kind: 'lab', save: false });
 
     for (const want of wants) {
       if (sitesLeft <= 0) break;
@@ -800,7 +810,7 @@ export class Bot {
     const dmg1 = best.map((k) => k + '1');
     const dmg2 = best.map((k) => k + '2');
     if (this.level === 0) order.push(dmg1[0], 'armor1', 'railguns', dmg1[1], dmg1[2], 'proto_emp');
-    else order.push(dmg1[0], 'armor1', 'proto_emp', dmg1[1], 'railguns', 'bandwidth', dmg2[0], 'proto_orbital', dmg1[2], 'armor2', dmg2[1], 'proto_override', dmg2[2]);
+    else order.push(dmg1[0], 'armor1', 'proto_emp', 'proto_orbital', dmg1[1], dmg2[0], 'railguns', 'bandwidth', dmg1[2], 'armor2', dmg2[1], 'proto_override', dmg2[2]);
     for (const id of order) {
       if (H.research.has(id)) continue;
       const r = RESEARCH[id];
@@ -845,10 +855,14 @@ export class Bot {
       let frontV = 0;
       for (const c of cl) {
         const dA = Math.hypot(c.x - anchor.x, c.y - anchor.y);
-        if (dA < 12) {
-          // fight at the turret line: step out at most ~4 tiles toward the enemy
+        // how close is this group to any of our structures?
+        let bd = Infinity;
+        for (const b of s.blds) { const d = Math.hypot(b.x - c.x, b.y - c.y) - b.size / 2; if (d < bd) bd = d; }
+        if (dA >= 16 && bd > 7) continue; // still approaching: let it come to the turret line
+        if (dA < 16) {
+          // fight at the turret line: step out at most ~5 tiles toward the enemy
           frontV += c.v;
-          const k = Math.min(1, 4 / Math.max(1, dA));
+          const k = Math.min(1, 5 / Math.max(1, dA));
           const px = anchor.x + (c.x - anchor.x) * k, py = anchor.y + (c.y - anchor.y) * k;
           const g = home.filter((u) => !used.has(u.id) && Math.hypot(u.x - anchor.x, u.y - anchor.y) < 22);
           for (const u of g) used.add(u.id);
@@ -884,14 +898,21 @@ export class Bot {
 
     // ---------------------------------------------------------- attacks
     if (this.mode === 'attack') this.runAttack(w, strike);
-    else if (!s.threats.length && w.time > this.attackAt) {
-      const surgeWindow = !A.tuning.surges || A.surgeT > (this.level === 0 ? 30 : 70) || A.surgeN === 0 && A.surgeT > 60;
-      if (surgeWindow && !A.surgeActive) {
-        let homeValue = 0;
-        for (const u of home) homeValue += this.value(u);
-        const minV = cfg.attackValue * (1 + 0.12 * (A.threat - 1));
+    else if (w.time > this.attackAt) {
+      let homeValue = 0, threatV = 0;
+      for (const u of home) homeValue += this.value(u);
+      for (const u of s.threats) threatV += this.value(u);
+      // AXIOM without Fabricators only spawns at the Core: go for the kill even mid-cycle
+      const weak = !s.axStructs.some((b) => b.kind === 'fabricator') && s.axStructs.some((b) => b.kind === 'core');
+      const quiet = threatV <= homeValue * (weak ? 0.25 : 0.02);
+      const surgeWindow = !A.tuning.surges || weak || A.surgeT > (this.level === 0 ? 30 : 70) || (A.surgeN === 0 && A.surgeT > 60);
+      if (quiet && surgeWindow && (!A.surgeActive || weak)) {
+        const minV = cfg.attackValue * (weak ? 1 : 1 + 0.12 * (A.threat - 1));
+        this.note = `home ${homeValue | 0}/${minV | 0}`;
         if (homeValue >= minV) {
           const t = this.pickTarget(w, homeValue);
+          this.note += t ? ` -> ${t.kind}#${t.id}` : ' no target';
+          if (!t) { const core = s.axStructs.find((b) => b.kind === 'core'); if (core) this.note += ` coreDef ${this.defenseAt(core) | 0}`; }
           if (t) this.launch(w, t, home);
         }
       }
@@ -932,33 +953,58 @@ export class Bot {
     if (ids.length) w.commands.push({ c: 'order', ids, order: { type: 'amove', x, y } });
   }
 
-  private pickTarget(w: World, armyValue: number): Entity | null {
+  /** Defending value around an AXIOM structure (the bot is allowed to know roughly where the swarm is). */
+  private defenseAt(b: Entity): number {
+    let def = 0;
+    for (const u of this.s.allRobots) if (Math.abs(u.x - b.x) < 12 && Math.abs(u.y - b.y) < 12) def += this.value(u);
+    for (const o of this.s.axStructs) if (o.bdef?.weapon && Math.hypot(o.x - b.x, o.y - b.y) < 9) def += o.kind === 'core' ? 900 : 350;
+    return def;
+  }
+
+  private pickTarget(w: World, armyValue: number, from?: Pt): Entity | null {
     const s = this.s, hq = s.hq!;
+    const o = from ?? hq;
     let best: Entity | null = null, bs = Infinity;
     const fabs = s.axStructs.filter((b) => b.kind === 'fabricator').length;
+    const A = w.axiom;
+    const resist = A.resist.kinetic + A.resist.energy + A.resist.explosive;
     const cands: Entity[] = [...s.axStructs];
-    if (this.level > 0) for (const f of s.farms) if (f.team !== HUMAN) cands.push(f);
+    if (this.level > 0) for (const f of s.farms) if (f.team === AXIOM) cands.push(f);
     for (const b of cands) {
       if (!b.alive) continue;
-      const d = Math.hypot(b.x - hq.x, b.y - hq.y);
-      let sc = d;
+      let sc = Math.hypot(b.x - o.x, b.y - o.y) * 0.7 + Math.hypot(b.x - hq.x, b.y - hq.y) * 0.3;
       switch (b.kind) {
-        case 'relay': sc -= 6; break;
-        case 'lancet': sc -= 2; break;
-        case 'fabricator': sc -= 4; break;
-        case 'vault': sc -= w.axiom.resist.kinetic + w.axiom.resist.energy + w.axiom.resist.explosive > 0.5 ? 14 : 4; break;
-        case 'core': sc += fabs > 0 ? 25 : -10; break;
-        case 'server_farm': sc -= 5; break;
+        case 'relay': sc -= 8; break;
+        case 'lancet': sc -= 4; break;
+        case 'fabricator': sc -= 16; break;
+        case 'vault': sc -= resist > 0.6 ? 22 : 6; break;
+        case 'core': sc += fabs > 0 ? 20 : -25; break;
+        case 'server_farm': sc += 4; break;
       }
-      // defenders around the target (bot knows the swarm's rough whereabouts)
-      let def = 0;
-      for (const u of s.allRobots) if (Math.abs(u.x - b.x) < 13 && Math.abs(u.y - b.y) < 13) def += this.value(u);
-      for (const o of s.axStructs) if (o.bdef?.weapon && Math.hypot(o.x - b.x, o.y - b.y) < 9) def += o.kind === 'core' ? 900 : 350;
-      if (armyValue < def * this.cfg.attackRatio) continue;
-      sc += def / 200;
+      const def = this.defenseAt(b);
+      // final push: once the Fabricators are gone (or we are maxed out) accept an even fight at the Core
+      const maxed = w.human.pop >= Math.min(140, w.human.popCap) - 8;
+      const ratio = b.kind === 'core' && (fabs === 0 || maxed) ? 1.0 : this.cfg.attackRatio;
+      if (armyValue < def * ratio) continue;
+      sc += def / 150;
       if (sc < bs) { bs = sc; best = b; }
     }
     return best;
+  }
+
+  /** Can the base hold the next surge without the strike group? */
+  private homeCanHold(w: World, home: Entity[]): boolean {
+    const A = w.axiom;
+    const D = DIFF[w.settings.difficulty];
+    let hv = 0;
+    for (const u of home) hv += this.value(u);
+    for (const k of TURRETS) for (const b of this.s.byKind.get(k) ?? []) if (b.id && b.built) hv += 380 * b.hp / b.maxHp;
+    const n = A.surgeN + 1;
+    const damp = Math.min(1, AXIOM_BAL.surgeDamp0 + AXIOM_BAL.surgeDampStep * (n - 1));
+    // pool keeps growing until launch: extrapolate to the launch time
+    const pool = A.surgePool + A.computeRate * AXIOM_BAL.surgeShare * Math.max(0, A.surgeT);
+    const expected = pool * D.surge * damp * 4.3 * (n % 4 === 0 ? 1.4 : 1);
+    return hv > expected * 1.4;
   }
 
   private launch(w: World, t: Entity, home: Entity[]): void {
@@ -997,16 +1043,17 @@ export class Bot {
     const distHome = Math.hypot(c.x - hq.x, c.y - hq.y);
     // retreat: too weak, or a surge is about to land and we are far away
     const travel = distHome / 2.3 + 10;
-    if (v < this.strikeStart * 0.35 || (A.tuning.surges && this.level > 0 && A.surgeT < travel && A.surgeT > 0 && distHome > 20)) {
-      this.recall(w, strike);
-      return;
+    if (v < this.strikeStart * 0.35) { this.recall(w, strike); return; }
+    if (A.tuning.surges && this.level > 0 && A.surgeT < travel && A.surgeT > 0 && distHome > 20) {
+      const home = s.army.filter((u) => !this.strike.has(u.id));
+      if (!this.homeCanHold(w, home)) { this.recall(w, strike); return; }
     }
     let t = w.get(this.targetId);
     if (t && t.kind === 'server_farm') {
       if (t.team === HUMAN) { this.farmHold++; if (this.farmHold > 3) t = undefined; }
     }
     if (!t || (t.team !== AXIOM && t.kind !== 'server_farm')) {
-      const nt = this.pickTarget(w, v);
+      const nt = this.pickTarget(w, v, c);
       if (!nt) { this.recall(w, strike); return; }
       this.targetId = nt.id;
       this.farmHold = 0;

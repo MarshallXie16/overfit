@@ -56,8 +56,7 @@ export class Controller {
     on(window, 'pointerup', (e) => this.onUp(e as PointerEvent));
     on(c, 'wheel', (e) => this.onWheel(e as WheelEvent), { passive: false });
     on(c, 'contextmenu', (e) => e.preventDefault());
-    on(c, 'pointerenter', () => { this.mouse.inside = true; });
-    on(c, 'pointerleave', () => { this.mouse.inside = false; });
+    on(document.documentElement, 'mouseleave', () => { this.mouse.inside = false; });
     on(window, 'keydown', (e) => this.onKey(e as KeyboardEvent));
     on(window, 'keyup', (e) => this.keys.delete((e as KeyboardEvent).key));
     on(window, 'blur', () => { this.keys.clear(); this.mouse.inside = false; });
@@ -87,8 +86,10 @@ export class Controller {
   }
 
   /** Drop dead / no-longer-visible entities from selection. */
+  private pruneT = 0;
   pruneSelection(): void {
     const w = this.world;
+    if (++this.pruneT % 10 !== 0) return;
     const keep = this.selection.filter((id) => {
       const e = w.get(id);
       if (!e) return false;
@@ -140,6 +141,7 @@ export class Controller {
   // ---------------------------------------------------------------- per-frame
   update(dt: number): void {
     const cam = this.r.cam;
+    if (!this.enabled) { this.r.hoverId = 0; return; }
     const sp = (22 / cam.zoom) * dt;
     let dx = 0, dy = 0;
     if (this.keys.has('ArrowLeft')) dx -= 1;
@@ -256,6 +258,7 @@ export class Controller {
   private lastMoveT = 0;
   private onMove(e: PointerEvent): void {
     this.lastMoveT = performance.now();
+    this.mouse.inside = true;
     const rect = (this.r.app.canvas as HTMLCanvasElement).getBoundingClientRect();
     this.mouse.x = e.clientX - rect.left;
     this.mouse.y = e.clientY - rect.top;
@@ -351,6 +354,7 @@ export class Controller {
 
   placeBuilding(kind: string, tx: number, ty: number, queue: boolean, silent = false): void {
     const builders = this.ownSelected().filter((u) => u.udef?.abilities?.includes('build'));
+    if (!builders.length) { this.hooks.toast('Select an Engineer to build'); this.hooks.sound('ui_error'); this.setMode({ m: 'normal' }); return; }
     const chk = this.world.canPlace(kind, tx, ty);
     if (!chk.ok) { if (!silent) { this.hooks.toast(chk.reason ?? 'Cannot build there'); this.hooks.sound('ui_error'); } return; }
     // closest builder only for single structures; all selected for walls is wasteful
@@ -370,6 +374,7 @@ export class Controller {
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
     this.keys.add(e.key);
     const k = e.key;
+    if (e.repeat && (k === 'p' || k === 'P' || k === 'Escape' || k === 'F10' || k === 'Pause')) return;
     if (k === 'Escape') {
       if (this.mode.m !== 'normal') { this.setMode({ m: 'normal' }); return; }
       if (this.hooks.hotkey(e)) return;
@@ -379,8 +384,9 @@ export class Controller {
     if (k === 'F10') { e.preventDefault(); this.hooks.openMenu(); return; }
     if (k === 'p' || k === 'P' || k === 'Pause') { this.hooks.togglePause(); return; }
     // control groups
-    if (/^[0-9]$/.test(k)) {
-      const n = +k;
+    const dm = /^(?:Digit|Numpad)([0-9])$/.exec(e.code);
+    if (dm) {
+      const n = +dm[1];
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
         this.groups.set(n, this.ownSelected().map((x) => x.id));
@@ -391,7 +397,7 @@ export class Controller {
         this.groups.set(n, [...new Set([...(this.groups.get(n) ?? []), ...this.ownSelected().map((x) => x.id)])]);
         return;
       }
-      const g = (this.groups.get(n) ?? []).filter((id) => this.world.get(id));
+      const g = (this.groups.get(n) ?? []).filter((id) => this.world.get(id)?.team === HUMAN);
       if (!g.length) return;
       this.setSelection(g);
       const now = performance.now();

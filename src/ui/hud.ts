@@ -157,8 +157,8 @@ export class Hud {
     }
     const pips = this.el.pips.children;
     for (let i = 0; i < 10; i++) pips[i].classList.toggle('on', i < A.threat);
-    this.updateModel();
-    this.updateProtocols();
+    this.slowT -= dt;
+    if (this.slowT <= 0) { this.slowT = 0.1; this.updateModel(); this.updateProtocols(); }
     // alerts fade
     for (let i = this.alerts.length - 1; i >= 0; i--) {
       const a = this.alerts[i];
@@ -346,6 +346,7 @@ export class Hud {
 
   // ---------------------------------------------------------------- under-attack alerts
   private attackT = 0;
+  private slowT = 0;
   private bossId = 0;
   private lastAttackAlert = { bld: -99, unit: -99 };
   private checkUnderAttack(): void {
@@ -404,6 +405,7 @@ export class Hud {
     c.addEventListener('pointerdown', (e) => {
       const p = go(e);
       if (e.button === 2) {
+        if (this.ctl.mode.m !== 'normal') { this.ctl.setMode({ m: 'normal' }); return; }
         const sel = this.ctl.ownSelected();
         if (sel.length) { this.ctl.issue({ c: 'smart', ids: sel.map((s) => s.id), x: p.x, y: p.y, targetId: 0, queue: e.shiftKey }); this.r.marker(p.x, p.y, 0x60ff9a); this.sound('ui_command'); }
         return;
@@ -412,7 +414,8 @@ export class Hud {
       if (md === 'attack' || md === 'move') {
         const ids = this.ctl.ownSelected().filter((u) => u.isUnit).map((u) => u.id);
         this.ctl.issue({ c: 'order', ids, order: { type: md === 'attack' ? 'amove' : 'move', x: p.x, y: p.y }, queue: e.shiftKey });
-        this.ctl.setMode({ m: 'normal' });
+        this.r.marker(p.x, p.y, md === 'attack' ? 0xff5050 : 0x60ff9a);
+        if (!e.shiftKey) this.ctl.setMode({ m: 'normal' });
         return;
       }
       dragging = true;
@@ -526,7 +529,7 @@ export class Hud {
 
   // ---------------------------------------------------------------- selection panel
   onSelection(): void {
-    this.buildMenu = false;
+    if (this.buildMenu && !this.ctl.ownSelected().some((e) => e.udef?.abilities?.includes('build'))) this.buildMenu = false;
     this.cardKey = '';
     this.renderSel();
     this.refreshCard();
@@ -684,7 +687,7 @@ export class Hud {
     const b = blds[0];
     const same = blds.filter((x) => x.kind === b.kind);
     if (!b.built) {
-      out.push({ id: 'cancel', icon: this.icon('cmd_cancel'), hotkey: 'Escape', title: 'Cancel Construction', desc: 'Refunds the full cost.', action: () => { for (const s of same) this.ctl.issue({ c: 'cancelBuild', id: s.id }); } });
+      out.push({ id: 'cancel', icon: this.icon('cmd_cancel'), hotkey: 'Delete', title: 'Cancel Construction', desc: 'Refunds the full cost.', action: () => { for (const s of same) this.ctl.issue({ c: 'cancelBuild', id: s.id }); } });
       return out;
     }
     if (b.hacked) {
@@ -704,8 +707,10 @@ export class Hud {
         action: (shift) => {
           // train in the building with the shortest queue
           const n = shift ? 5 : 1;
+          const load = new Map(same.map((x) => [x.id, x.prod.length]));
           for (let i = 0; i < n; i++) {
-            const tgt = same.slice().sort((a, c) => a.prod.length - c.prod.length)[0];
+            const tgt = same.slice().sort((a, c) => load.get(a.id)! - load.get(c.id)!)[0];
+            load.set(tgt.id, load.get(tgt.id)! + 1);
             this.ctl.issue({ c: 'train', building: tgt.id, kind });
           }
           this.sound('ui_click');
@@ -742,30 +747,47 @@ export class Hud {
     return out;
   }
 
+  /** Rebuild the card only when the set of buttons changes; otherwise patch state in place (keeps clicks reliable). */
   private refreshCard(): void {
     const btns = this.computeButtons();
     this.buttons = btns;
-    const key = btns.map((b) => `${b.id}|${b.disabled ? 1 : 0}|${b.poor ? 1 : 0}|${b.active ? 1 : 0}|${b.progress !== undefined ? Math.round(b.progress * 50) : '-'}`).join(',');
-    if (key === this.cardKey) return;
-    this.cardKey = key;
+    const key = btns.map((b) => b.id).join(',');
     const card = this.el.card;
-    card.innerHTML = '';
-    for (const b of btns) {
-      const el = document.createElement('button');
-      el.className = `cbtn ${b.disabled ? 'disabled' : ''} ${b.poor ? 'poor' : ''} ${b.active ? 'active' : ''}`;
-      const hk = b.hotkey === 'Escape' ? 'Esc' : b.hotkey === 'Delete' ? 'Del' : b.hotkey ?? '';
-      const cost = b.cost && (b.cost.scrap || b.cost.data) ? `<span class="cost">${b.cost.scrap ? b.cost.scrap : ''}${b.cost.data ? ` <span class="d">${b.cost.data}◆</span>` : ''}</span>` : '';
-      el.innerHTML = `<img src="${b.icon}"><span class="hk">${hk}</span>${cost}${b.progress !== undefined ? `<div class="prog" style="width:${Math.min(1, b.progress) * 100}%"></div>` : ''}`;
-      el.onclick = (ev) => { if (b.disabled) { this.toast(b.reason ?? 'Unavailable'); this.sound('ui_error'); return; } b.action(ev.shiftKey); this.cardKey = ''; };
-      el.onmouseenter = () => {
-        const c = b.cost;
-        const costHtml = c ? `<div class="tt-c">${c.scrap ? `<span class="s">${c.scrap} scrap</span> ` : ''}${c.data ? `<span class="d">${c.data} data</span> ` : ''}${c.power ? `<span class="p">${c.power > 0 ? '+' : ''}${c.power} power</span> ` : ''}${c.time ? `<span class="t">${c.time}s</span>` : ''}</div>` : '';
-        this.showTip(el, `<div class="tt-h">${b.title}${hk ? `<span class="hk">${hk}</span>` : ''}</div>${costHtml}${b.desc ? `<div class="tt-d">${b.desc}</div>` : ''}${b.reason ? `<div class="tt-r">${b.reason}</div>` : ''}`);
-        this.tooltipBtn = b;
-      };
-      el.onmouseleave = () => this.hideTip();
-      card.appendChild(el);
+    if (key !== this.cardKey || card.children.length !== btns.length) {
+      this.cardKey = key;
+      card.innerHTML = '';
+      btns.forEach((b0, i) => {
+        const el = document.createElement('button');
+        const hk = b0.hotkey === 'Escape' ? 'Esc' : b0.hotkey === 'Delete' ? 'Del' : b0.hotkey ?? '';
+        const cost = b0.cost && (b0.cost.scrap || b0.cost.data) ? `<span class="cost">${b0.cost.scrap ? b0.cost.scrap : ''}${b0.cost.data ? ` <span class="d">${b0.cost.data}◆</span>` : ''}</span>` : '';
+        el.innerHTML = `<img src="${b0.icon}"><span class="hk">${hk}</span>${cost}<div class="prog" style="width:0"></div>`;
+        el.onclick = (ev) => {
+          const b = this.buttons[i];
+          if (!b) return;
+          if (b.disabled) { this.toast(b.reason ?? 'Unavailable'); this.sound('ui_error'); return; }
+          b.action(ev.shiftKey);
+          this.refreshCard();
+        };
+        el.onmouseenter = () => {
+          const b = this.buttons[i];
+          if (!b) return;
+          const c = b.cost;
+          const costHtml = c ? `<div class="tt-c">${c.scrap ? `<span class="s">${c.scrap} scrap</span> ` : ''}${c.data ? `<span class="d">${c.data} data</span> ` : ''}${c.power ? `<span class="p">${c.power > 0 ? '+' : ''}${c.power} power</span> ` : ''}${c.time ? `<span class="t">${c.time}s</span>` : ''}</div>` : '';
+          this.showTip(el, `<div class="tt-h">${b.title}${hk ? `<span class="hk">${hk}</span>` : ''}</div>${costHtml}${b.desc ? `<div class="tt-d">${b.desc}</div>` : ''}${b.reason ? `<div class="tt-r">${b.reason}</div>` : ''}`);
+          this.tooltipBtn = b;
+        };
+        el.onmouseleave = () => this.hideTip();
+        card.appendChild(el);
+      });
     }
+    btns.forEach((b, i) => {
+      const el = card.children[i] as HTMLElement;
+      const cls = `cbtn${b.disabled ? ' disabled' : ''}${b.poor ? ' poor' : ''}${b.active ? ' active' : ''}`;
+      if (el.className !== cls) el.className = cls;
+      const pr = el.querySelector<HTMLElement>('.prog')!;
+      const wpc = b.progress !== undefined ? `${Math.min(1, b.progress) * 100}%` : '0';
+      if (pr.style.width !== wpc) pr.style.width = wpc;
+    });
   }
 
   /** Keyboard → command card / protocols. Returns true if handled. */

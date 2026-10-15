@@ -118,7 +118,7 @@ const W = {
   slam: { type: 'kinetic', damage: 32, cooldown: 1.4, range: 0.5, melee: true, vsStructure: 1.5, sfx: 'brute_slam', fx: 'melee' },
   lance: { type: 'energy', damage: 20, cooldown: 1.6, range: 7, sfx: 'lancer_beam', fx: 'beam' },
   sting: { type: 'energy', damage: 6, cooldown: 0.5, range: 4, sfx: 'zap_small', fx: 'beam' },
-  colossus: { type: 'explosive', damage: 80, cooldown: 2.5, range: 7, splash: 2, projectileSpeed: 10, sfx: 'artillery_fire', fx: 'shell' },
+  colossus: { type: 'explosive', damage: 55, cooldown: 2.5, range: 7, splash: 1.6, projectileSpeed: 10, sfx: 'artillery_fire', fx: 'shell' },
   lancet: { type: 'energy', damage: 18, cooldown: 1.2, range: 7, sfx: 'lancer_beam', fx: 'beam' },
   core: { type: 'energy', damage: 30, cooldown: 1.5, range: 8, chains: 3, chainRange: 3, sfx: 'tesla', fx: 'arc' },
 } satisfies Record<string, WeaponDef>;
@@ -210,7 +210,7 @@ export const UNITS: Record<string, UnitDef> = {
     desc: 'Support drone that repairs nearby robots.',
   },
   colossus: {
-    kind: 'colossus', name: 'Colossus', side: 'axiom', hp: 6000, armor: 'armored', speed: 1.2, radius: 1.5, sight: 9,
+    kind: 'colossus', name: 'Colossus', side: 'axiom', hp: 5000, armor: 'armored', speed: 1.2, radius: 1.5, sight: 9,
     weapon: W.colossus, cost: { scrap: 0 }, pop: 0, buildTime: 30, compute: 400, threat: 99, dataValue: 60, scrapValue: 300, wreck: 'large', boss: true,
     abilities: ['stomp'],
     desc: 'Siege walker boss. Leads Cascades. Cannot be hacked.',

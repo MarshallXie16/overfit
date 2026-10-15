@@ -209,6 +209,12 @@ export function generateWorld(settings: GameSettings, opts: MapGenOptions = {}):
   // two near the base, flanking
   scrapSites.push({ x: ps.x + ux * 9 - uy * 7, y: ps.y + uy * 9 + ux * 7 });
   scrapSites.push({ x: ps.x + ux * 9 + uy * 7, y: ps.y + uy * 9 - ux * 7 });
+  // skirmish/endless: two "natural expansion" fields ~22 tiles out on the player's side, so a
+  // random layout can't leave the player with nothing between the base and AXIOM's half
+  if (opts.scrapFields === undefined) {
+    scrapSites.push({ x: ps.x + ux * 12 - uy * 19, y: ps.y + uy * 12 + ux * 19 });
+    scrapSites.push({ x: ps.x + ux * 12 + uy * 19, y: ps.y + uy * 12 - ux * 19 });
+  }
   const nScrap = opts.scrapFields ?? Math.round(N / 11);
   for (let k = 0; k < nScrap * 4 && scrapSites.length < nScrap; k++) {
     const p = { x: rng.range(8, N - 8), y: rng.range(8, N - 8) };
@@ -262,7 +268,7 @@ export function generateWorld(settings: GameSettings, opts: MapGenOptions = {}):
       const x = Math.floor(p.x + Math.cos(a) * r), y = Math.floor(p.y + Math.sin(a) * r);
       if (!w.isWalkableTile(x, y)) continue;
       if (w.entities.some((e) => e.cat === 'resource' && (e.x | 0) === x && (e.y | 0) === y)) continue;
-      w.spawnResource('scrap', x + 0.5, y + 0.5, near ? rng.int(350, 500) : rng.int(400, 650), rng.int(0, 3));
+      w.spawnResource('scrap', x + 0.5, y + 0.5, near ? rng.int(500, 700) : rng.int(400, 650), rng.int(0, 3));
       j++;
     }
   }

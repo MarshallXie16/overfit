@@ -189,7 +189,7 @@ export class Session {
   dispose(): void {
     this.ctl?.dispose();
     this.hud?.destroy();
-    this.r.clear();
-    this.r.app.stage.removeChildren();
+    this.r.destroy();
+    audio.setPaused(false);
   }
 }

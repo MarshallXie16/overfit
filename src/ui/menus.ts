@@ -21,10 +21,37 @@ export class Menus {
   el: HTMLElement | null = null;
   constructor(app: App) { this.app = app; }
 
-  close(): void { this.el?.remove(); this.el = null; }
+  private keyOff: (() => void) | null = null;
+  private endTimer = 0;
+
+  /** Closing any overlay also drops its keyboard handler, cancels a pending end screen and re-enables game input. */
+  close(): void {
+    this.el?.remove();
+    this.el = null;
+    this.keyOff?.();
+    this.keyOff = null;
+    if (this.endTimer) { clearTimeout(this.endTimer); this.endTimer = 0; }
+    const ctl = this.app.session?.ctl;
+    if (ctl && !this.app.session!.ended) ctl.enabled = true;
+  }
+
+  /** Single overlay-owned keydown handler (replaced/removed with the overlay). */
+  private setKey(fn: (e: KeyboardEvent) => void): void {
+    this.keyOff?.();
+    const h = (e: KeyboardEvent) => { if (!e.repeat) fn(e); };
+    window.addEventListener('keydown', h);
+    this.keyOff = () => window.removeEventListener('keydown', h);
+  }
+
+  /** Block game hotkeys while a modal is up. */
+  private blockGame(): void {
+    const ctl = this.app.session?.ctl;
+    if (ctl) { ctl.enabled = false; ctl.keys.clear(); ctl.setMode({ m: 'normal' }); }
+  }
 
   private show(html: string, cls = ''): HTMLElement {
     this.close();
+    if (cls !== 'title') this.blockGame();
     const o = document.createElement('div');
     o.className = 'overlay ' + cls;
     o.innerHTML = html;
@@ -99,9 +126,8 @@ export class Menus {
     this.show(`<div class="dialog clip" style="max-width:640px"><div style="color:var(--teal);letter-spacing:3px;font-size:12px">${m.subtitle.toUpperCase()}</div><h2>${m.name.toUpperCase()}</h2>
       ${m.briefing.map((p) => `<p>${p}</p>`).join('')}
       <button class="btn primary" data-a="go">Deploy<small>Press Enter</small></button></div>`);
-    const go = () => { this.close(); s.setPaused(false); window.removeEventListener('keydown', key); };
-    const key = (e: KeyboardEvent) => { if (e.key === 'Enter') go(); };
-    window.addEventListener('keydown', key);
+    const go = () => { this.close(); s.setPaused(false); };
+    this.setKey((e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
     this.on('[data-a=go]', go);
   }
 
@@ -185,21 +211,20 @@ export class Menus {
   }
 
   // ---------------------------------------------------------------- pause
-  pause(s: Session): void {
+  pause(s: Session, wasPaused = false): void {
     this.show(`<div class="dialog clip"><h2>PAUSED</h2>
       <button class="btn primary" data-a="resume">Resume</button>
       <button class="btn" data-a="howto">Field Manual</button>
       <button class="btn" data-a="settings">Settings</button>
       <button class="btn" data-a="restart">Restart</button>
       <button class="btn danger" data-a="quit">Quit to Title</button></div>`);
-    const resume = () => { this.close(); s.setPaused(false); window.removeEventListener('keydown', key); };
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && this.el) { e.stopPropagation(); resume(); } };
-    setTimeout(() => window.addEventListener('keydown', key), 0);
+    const resume = () => { this.close(); s.setPaused(wasPaused); };
+    this.setKey((e) => { if (e.key === 'Escape' || e.key === 'F10') { e.preventDefault(); resume(); } });
     this.on('[data-a=resume]', resume);
-    this.on('[data-a=howto]', () => { window.removeEventListener('keydown', key); this.howto(() => this.pause(s)); });
-    this.on('[data-a=settings]', () => { window.removeEventListener('keydown', key); this.settings(() => this.pause(s)); });
-    this.on('[data-a=restart]', () => { window.removeEventListener('keydown', key); this.app.restart(); });
-    this.on('[data-a=quit]', () => { window.removeEventListener('keydown', key); this.app.quitToMenu(); });
+    this.on('[data-a=howto]', () => this.howto(() => this.pause(s, wasPaused)));
+    this.on('[data-a=settings]', () => this.settings(() => this.pause(s, wasPaused)));
+    this.on('[data-a=restart]', () => this.app.restart());
+    this.on('[data-a=quit]', () => this.app.quitToMenu());
   }
 
   // ---------------------------------------------------------------- end
@@ -237,7 +262,10 @@ export class Menus {
     }
     const next = cur.mode === 'campaign' && win ? MISSIONS.find((m) => m.index === (MISSIONS.find((x) => x.id === cur.missionId)?.index ?? 0) + 1) : undefined;
     const mm = Math.floor(w.time / 60), ss = Math.floor(w.time % 60);
-    setTimeout(() => {
+    this.blockGame();
+    this.endTimer = window.setTimeout(() => {
+      this.endTimer = 0;
+      if (this.app.session !== s) return;
       this.show(`<div class="dialog clip" style="max-width:640px"><h2 style="color:${win ? 'var(--teal)' : 'var(--red)'}">${endless ? 'THE SWARM PREVAILS' : win ? 'VICTORY' : 'DEFEAT'}</h2><p>${w.resultReason}</p>
         <div class="statgrid">
           <div><b>${mm}:${String(ss).padStart(2, '0')}</b><span>TIME</span></div>

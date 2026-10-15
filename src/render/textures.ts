@@ -9,7 +9,9 @@ export interface ArtAtlasLike {
 export interface TexInfo { tex: Texture; ax: number; ay: number; w: number; h: number }
 
 const SHEET = 4096;
-const PAD = 2;
+const PAD = 12;
+/** keys uploaded as their own repeating texture (tiling patterns) */
+const STANDALONE = new Set(['fx:creep_pattern']);
 
 /**
  * Packs every atlas canvas into a few 4096² sheets (shelf packing) so Pixi can batch draws.
@@ -35,7 +37,7 @@ export class TextureBank {
     const big: typeof items = [];
     for (const it of items) {
       const w = it.c.width, h = it.c.height;
-      if (w > 1024 || h > 1024) { big.push(it); continue; }
+      if (w > 1024 || h > 1024 || STANDALONE.has(it.k)) { big.push(it); continue; }
       if (!sheet || x + w + PAD > SHEET) { x = 0; y += rowH + PAD; rowH = 0; }
       if (!sheet || y + h + PAD > SHEET) {
         sheet = document.createElement('canvas');
@@ -59,6 +61,7 @@ export class TextureBank {
     for (const it of big) {
       const tex = Texture.from(it.c);
       tex.source.scaleMode = 'linear';
+      if (STANDALONE.has(it.k)) tex.source.addressMode = 'repeat';
       this.map.set(it.k, { tex, ax: it.m.anchorX, ay: it.m.anchorY, w: it.c.width, h: it.c.height });
     }
   }
