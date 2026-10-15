@@ -146,12 +146,14 @@ export class Controller {
     if (this.keys.has('ArrowRight')) dx += 1;
     if (this.keys.has('ArrowUp')) dy -= 1;
     if (this.keys.has('ArrowDown')) dy += 1;
-    if (this.edgeScroll && this.mouse.inside && !this.down && !this.panning && document.hasFocus()) {
+    const mx = this.mouse.x, my = this.mouse.y, W = this.r.screenW, H = this.r.screenH;
+    const inBounds = mx >= 0 && my >= 0 && mx <= W && my <= H;
+    if (this.edgeScroll && this.mouse.inside && inBounds && !this.down && !this.panning && document.hasFocus() && performance.now() - this.lastMoveT < 4000) {
       const m = 6;
-      if (this.mouse.x < m) dx -= 1;
-      if (this.mouse.x > this.r.screenW - m) dx += 1;
-      if (this.mouse.y < m) dy -= 1;
-      if (this.mouse.y > this.r.screenH - m) dy += 1;
+      if (mx < m) dx -= 1;
+      if (mx > W - m) dx += 1;
+      if (my < m) dy -= 1;
+      if (my > H - m) dy += 1;
     }
     cam.x += dx * sp;
     cam.y += dy * sp;
@@ -251,7 +253,9 @@ export class Controller {
     this.down = { x: e.offsetX, y: e.offsetY, button: 0, t: performance.now() };
   }
 
+  private lastMoveT = 0;
   private onMove(e: PointerEvent): void {
+    this.lastMoveT = performance.now();
     const rect = (this.r.app.canvas as HTMLCanvasElement).getBoundingClientRect();
     this.mouse.x = e.clientX - rect.left;
     this.mouse.y = e.clientY - rect.top;

@@ -116,8 +116,9 @@ export function updateEconomy(w: World, c: TickCache): void {
       else if (f.capture <= -1) f.team = AXIOM;
       else if ((f.team === HUMAN && f.capture < 0) || (f.team === AXIOM && f.capture > 0)) f.team = NEUTRAL;
       if (f.team !== prev) {
+        const known = !!w.explored[(f.y | 0) * w.w + (f.x | 0)];
         if (f.team === HUMAN) w.alert('Server Farm captured — Data income online', f.x, f.y, 'info');
-        else if (f.team === AXIOM) w.alert('AXIOM seized a Server Farm', f.x, f.y, 'warn');
+        else if (f.team === AXIOM && known) w.alert('AXIOM seized a Server Farm', f.x, f.y, 'warn');
         w.emit({ t: 'farm', id: f.id, team: f.team, x: f.x, y: f.y });
       }
       if (f.team === HUMAN) { H.data += 0.25; H.stats.dataEarned += 0.25; }

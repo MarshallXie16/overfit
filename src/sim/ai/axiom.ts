@@ -76,6 +76,9 @@ export function updateAxiom(w: World, c: TickCache): void {
     if (b.progress >= 1) { b.built = true; w.emit({ t: 'axiom_built', kind: b.kind, x: b.x, y: b.y }); }
   }
 
+  // ---------------------------------------------------------------- endless: AXIOM never dies, it re-seeds
+  if (w.flags.endless && w.tick % 200 === 50 && !c.axiomBuildings.some((b) => b.kind === 'fabricator' || b.kind === 'core')) reseed(w, c);
+
   // ---------------------------------------------------------------- garrison production (1 Hz, staggered)
   if (w.tick % 20 === 7) produceGarrisons(w, c);
 
@@ -303,6 +306,22 @@ function areaFree(w: World, x: number, y: number, size: number): boolean {
     if (code === WALK_BLOCKED || code === WALK_STRUCTURE) return false;
   }
   return true;
+}
+
+/** Endless mode: spawn a new Fabricator (+Relay) far from the humans when all production is gone. */
+function reseed(w: World, c: TickCache): void {
+  const hq = humanHQ(w, c);
+  const hx = hq ? hq.x : w.playerStart.x, hy = hq ? hq.y : w.playerStart.y;
+  let best: Pt | null = null, bd = -1;
+  for (let k = 0; k < 200; k++) {
+    const x = 3 + Math.floor(w.rng.next() * (w.w - 8)), y = 3 + Math.floor(w.rng.next() * (w.h - 8));
+    if (!areaFree(w, x, y, 3)) continue;
+    const d = Math.hypot(x - hx, y - hy) + w.rng.next() * 10;
+    if (d > bd) { bd = d; best = { x, y }; }
+  }
+  if (!best) return;
+  w.spawnBuilding('fabricator', AXIOM, best.x, best.y, false);
+  w.alert('AXIOM has re-seeded a Fabricator somewhere in the city', 0, 0, 'warn');
 }
 
 function raid(w: World, c: TickCache): void {
