@@ -5,6 +5,9 @@ import { ctxOf, ihash, makeCanvas, mulberry32, type G } from './util';
 
 export const TERRAIN = { GROUND: 0, ROAD: 1, RUBBLE: 2, WATER: 3, RUIN: 4, PARK: 5 } as const;
 
+/** Timing of the last renderTerrainChunk call (diagnostics). */
+export const terrainStats = { baseMs: 0, totalMs: 0 };
+
 export interface TerrainMap {
   w: number;
   h: number;
@@ -518,6 +521,7 @@ function shrub(g: G, r: () => number, x: number, y: number, R: number, k: number
 // ------------------------------------------------------------------ main
 
 export function renderTerrainChunk(map: TerrainMap, x0: number, y0: number, tw: number, th: number, pxPerTile = 32): HTMLCanvasElement {
+  const t0 = performance.now();
   const ppt = pxPerTile;
   const k = ppt / 32;
   const m = new TMap(map);
@@ -525,7 +529,9 @@ export function renderTerrainChunk(map: TerrainMap, x0: number, y0: number, tw: 
   const H = th * ppt;
   const c = makeCanvas(W, H);
   const g = ctxOf(c);
+  const tb = performance.now();
   basePass(g, m, x0, y0, tw, th, ppt);
+  terrainStats.baseMs = performance.now() - tb;
 
   g.save();
   g.translate(-x0 * ppt, -y0 * ppt);
@@ -1206,6 +1212,7 @@ export function renderTerrainChunk(map: TerrainMap, x0: number, y0: number, tw: 
     }
   }
   g.restore();
+  terrainStats.totalMs = performance.now() - t0;
   return c;
 }
 

@@ -1,6 +1,6 @@
 // Art preview page (art.html). Query: ?zoom=2  ?only=<prefix>  ?scene=0|1  ?ppt=32|64  ?light=1  ?sceneOnly=1
 import { buildArtAtlas, type ArtAtlas } from './index';
-import { renderTerrainChunk, renderMinimapTerrain, TERRAIN } from './terrain';
+import { renderTerrainChunk, renderMinimapTerrain, TERRAIN, terrainStats } from './terrain';
 
 const q = new URLSearchParams(location.search);
 const zoom = parseFloat(q.get('zoom') ?? '1');
@@ -283,6 +283,20 @@ function seamTest(): string {
 }
 
 render();
+if (q.get('bench') === '1') {
+  const big = new Uint8Array(64 * 64);
+  const base = sampleMap();
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) big[y * 64 + x] = base[(y % MH) * MW + (x % MW)];
+  const map = { w: 64, h: 64, terrain: big, seed: 99 };
+  const times: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    const t = performance.now();
+    renderTerrainChunk(map, (i % 2) * 32, Math.floor(i / 2) * 32, 32, 32, 32);
+    times.push(Math.round(performance.now() - t));
+    times.push(Math.round(terrainStats.baseMs));
+  }
+  console.log('SEAM bench 32x32 chunks @32ppt ms:', times.join(','));
+}
 if (q.get('seamtest') === '1') {
   const r = seamTest();
   const div = document.createElement('div');

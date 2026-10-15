@@ -288,7 +288,6 @@ export class Hud {
         case 'hack_done': break;
         case 'objective': this.refreshObjectives(); break;
       }
-      if (ev.t === 'alert' && ev.x !== undefined && (ev.x as number) > 0) this.pings.push({ x: ev.x as number, y: ev.y as number, t: 0, color: ev.level === 'danger' ? '#ff3355' : ev.level === 'warn' ? '#ffb547' : '#37e0c8' });
       if (ev.t === 'surge_warn') for (const p of (ev.from as { x: number; y: number }[]) ?? []) this.pings.push({ x: p.x, y: p.y, t: 0, color: '#ff3355' });
     }
   }
@@ -300,6 +299,7 @@ export class Hud {
     if (x > 0 || y > 0) {
       el.onclick = () => this.ctl.centerOn(x, y);
       this.lastAlertPos = { x, y };
+      this.pings.push({ x, y, t: 0, color: level === 'danger' ? '#ff3355' : level === 'warn' ? '#ffb547' : '#37e0c8' });
     }
     this.el.alerts.appendChild(el);
     this.alerts.push({ el, t: 0, x, y });
