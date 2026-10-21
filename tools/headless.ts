@@ -4,7 +4,7 @@
 //   npx tsx tools/headless.ts --seed 1 --seeds 5 --minutes 20 --size 96 --diff veteran
 // Balance matrix (comma lists, parallel workers, aggregated table):
 //   npx tsx tools/headless.ts --seeds 10 --minutes 40 --size 80,96,128 --diff recruit,veteran,nightmare --level 2 --jobs 10 --quiet
-// Flags: --level 0|1|2 (bot level, default 1)  --mode skirmish|endless  --nobot  --quiet  --json  --jobs N
+// Flags: --level 0|1|2 (bot level, default 1)  --mode skirmish|endless  --nobot  --quiet  --json  --jobs N  --strict (exit 1 on invariant errors)
 //        --set PATH=VALUE,...   override balance constants (AXIOM_BAL, ECON, UNITS, BUILDINGS, RESEARCH, PROTOCOLS, DIFF, BOT)
 // Perf stress (N robots march on a bot-defended base, 128 map):   npx tsx tools/headless.ts --stress 900
 // Combat sandbox (open ground, 5 trials):   npx tsx tools/headless.ts --arena rifleman:20 gunner:14,skitter:14
@@ -364,6 +364,14 @@ async function main(): Promise<void> {
   results.sort((a, b) => a.diff.localeCompare(b.diff) || a.size - b.size || a.seed - b.seed);
   if (results.length > 1) table(results);
   if (asJson) console.log(JSON.stringify(results));
+  // --strict: CI gate — fail on any invariant error or crashed job
+  if (args.includes('--strict')) {
+    const errs = results.reduce((n, r) => n + r.errors, 0);
+    if (errs > 0 || results.length < jobsList.length) {
+      console.error(`STRICT: ${errs} invariant errors, ${jobsList.length - results.length} failed jobs`);
+      process.exit(1);
+    }
+  }
 }
 
 void main();

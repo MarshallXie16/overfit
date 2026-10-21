@@ -10,7 +10,12 @@
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run",
     "sim": "tsx tools/headless.ts",
-    "build:single": "vite build --config vite.single.config.ts"
+    "build:single": "vite build --config vite.single.config.ts",
+    "test:campaign": "tsx tools/campaign-check.ts",
+    "test:soak": "tsx tools/headless.ts --seeds 3 --minutes 12 --size 80,96 --diff veteran --jobs 3 --quiet --strict",
+    "test:e2e": "node tools/e2e.mjs && node tools/menus-e2e.mjs",
+    "build:artifact": "vite build --config vite.single.config.ts && node tools/make-artifact.mjs",
+    "ci": "npm run typecheck && npm test && npm run test:campaign && npm run test:soak && vite build"
   },
   "dependencies": {
     "@fontsource/chakra-petch": "^5.3.0",
@@ -25,5 +30,8 @@
     "vite": "^8.3.4",
     "vite-plugin-singlefile": "^2.3.3",
     "vitest": "^5.0.4"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

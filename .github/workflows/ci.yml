@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit + simulation tests
+        run: npm test
+      - name: Campaign scripts (all 5 operations, win paths)
+        run: npm run test:campaign
+      - name: Headless soak (bot vs AXIOM, invariant checks)
+        run: npm run test:soak
+      - name: Production build
+        run: npx vite build
+      - name: Single-file build
+        run: npm run build:single
