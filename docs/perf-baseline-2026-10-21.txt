@@ -1,0 +1,23 @@
+viewport 1512x982 @2x, 10s windows, base http://127.0.0.1:4174/; system GPU idle baseline 7.4% (subtracted)
+early / base                   GPU  56% (→120Hz ~111%) | CPU total 0.37 cores | renderer 0.14 gpu 0.22 other 0.01 | main-thread task 8% (script 6%, style+layout 0%) | fps 60
+early / ticker-stopped         GPU   4% (→120Hz ~8%) | CPU total 0.06 cores | renderer 0.04 gpu 0.01 other 0.01 | main-thread task 1% (script 0%, style+layout 0%) | fps 60
+early / no-vignette            GPU  52% (→120Hz ~104%) | CPU total 0.38 cores | renderer 0.15 gpu 0.22 other 0.01 | main-thread task 8% (script 6%, style+layout 0%) | fps 60
+early / no-backdrop-blur       GPU  44% (→120Hz ~88%) | CPU total 0.28 cores | renderer 0.14 gpu 0.13 other 0.01 | main-thread task 7% (script 5%, style+layout 0%) | fps 60
+early / no-css-effects         GPU  46% (→120Hz ~91%) | CPU total 0.26 cores | renderer 0.14 gpu 0.11 other 0.01 | main-thread task 7% (script 5%, style+layout 0%) | fps 60
+early / world-hidden           GPU  23% (→120Hz ~47%) | CPU total 0.33 cores | renderer 0.12 gpu 0.20 other 0.01 | main-thread task 6% (script 4%, style+layout 0%) | fps 60
+early / no-creep               GPU  27% (→120Hz ~55%) | CPU total 0.33 cores | renderer 0.13 gpu 0.19 other 0.01 | main-thread task 7% (script 5%, style+layout 0%) | fps 60
+early / no-fog                 GPU  54% (→120Hz ~108%) | CPU total 0.35 cores | renderer 0.14 gpu 0.20 other 0.01 | main-thread task 7% (script 5%, style+layout 0%) | fps 60
+early / res-1x                 GPU  26% (→120Hz ~51%) | CPU total 0.33 cores | renderer 0.13 gpu 0.19 other 0.01 | main-thread task 7% (script 5%, style+layout 0%) | fps 60
+early / res1x+css              GPU  17% (→120Hz ~35%) | CPU total 0.23 cores | renderer 0.12 gpu 0.09 other 0.01 | main-thread task 6% (script 4%, style+layout 0%) | fps 60
+early / res1x+css+creep+fog    GPU   1% (→120Hz ~3%) | CPU total 0.26 cores | renderer 0.17 gpu 0.08 other 0.01 | main-thread task 5% (script 4%, style+layout 0%) | fps 60
+early / base                   GPU  54% (→120Hz ~109%) | CPU total 0.45 cores | renderer 0.22 gpu 0.22 other 0.01 | main-thread task 8% (script 5%, style+layout 0%) | fps 60
+early / ticker-stopped         GPU  -2% (→120Hz ~-4%) | CPU total 0.11 cores | renderer 0.10 gpu 0.01 other 0.01 | main-thread task 1% (script 0%, style+layout 0%) | fps 60
+early / no-vignette            GPU  56% (→120Hz ~112%) | CPU total 0.46 cores | renderer 0.23 gpu 0.22 other 0.01 | main-thread task 9% (script 6%, style+layout 0%) | fps 60
+early / no-backdrop-blur       GPU  39% (→120Hz ~77%) | CPU total 0.36 cores | renderer 0.22 gpu 0.13 other 0.01 | main-thread task 8% (script 5%, style+layout 0%) | fps 60
+early / no-css-effects         GPU  46% (→120Hz ~92%) | CPU total 0.32 cores | renderer 0.20 gpu 0.10 other 0.01 | main-thread task 7% (script 5%, style+layout 0%) | fps 60
+early / world-hidden           GPU  22% (→120Hz ~44%) | CPU total 0.38 cores | renderer 0.18 gpu 0.19 other 0.01 | main-thread task 6% (script 4%, style+layout 0%) | fps 60
+early / no-creep               GPU  27% (→120Hz ~53%) | CPU total 0.40 cores | renderer 0.19 gpu 0.19 other 0.01 | main-thread task 7% (script 4%, style+layout 0%) | fps 60
+early / no-fog                 GPU  49% (→120Hz ~98%) | CPU total 0.42 cores | renderer 0.20 gpu 0.21 other 0.01 | main-thread task 7% (script 5%, style+layout 0%) | fps 60
+early / res-1x                 GPU  21% (→120Hz ~43%) | CPU total 0.41 cores | renderer 0.20 gpu 0.20 other 0.01 | main-thread task 7% (script 5%, style+layout 0%) | fps 60
+early / res1x+css              GPU  13% (→120Hz ~27%) | CPU total 0.28 cores | renderer 0.18 gpu 0.09 other 0.01 | main-thread task 6% (script 4%, style+layout 0%) | fps 60
+early / res1x+css+creep+fog    GPU  -3% (→120Hz ~-6%) | CPU total 0.28 cores | renderer 0.18 gpu 0.09 other 0.01 | main-thread task 6% (script 4%, style+layout 0%) | fps 60
