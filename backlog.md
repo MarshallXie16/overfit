@@ -3,6 +3,7 @@
 Ordered roughly by value. Move items to "Done" with the date when shipped.
 
 ## Now
+- [ ] Feedback channel before any public launch push (GitHub Discussions or a link from the title screen) — X research: community-shaped swarm RTSs get engagement.
 - [ ] Optional: itch.io page (zip via `npm run release:itch`) — owner uploads.
 - [ ] Add a LICENSE if the code should be reusable (public repo without a license = all rights reserved).
 

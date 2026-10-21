@@ -110,3 +110,12 @@ The first research pass (2026-10-14) could not read X.com directly (HTTP 402). T
 1. **Positioning is validated.** "The enemy AI literally retrains on you" puts AI in the mechanic, which is the angle Product Hunt rewards. The swarm/horde theme is in fashion on X, and pause-friendly survival RTS is an explicit selling point there (OVERFIT has tactical pause).
 2. **Distribution fits the jam/X playbook.** OVERFIT is instant-play, has no login, is free, has a daily seed and a shareable result card, and is AI-written. It would qualify for a future Vibe Jam.
 3. **Launch story.** "An RTS designed, coded, drawn and scored end-to-end by AI agents, about an AI that learns from you" is the hook for both X and Product Hunt. A draft is in `docs/LAUNCH.md`. Posting needs Marshall's approval.
+
+### Direct X.com reads (2026-10-21, x.com post pages, logged out)
+X search and profile timelines need a login, but individual post pages and pinned profile posts render for logged-out visitors. All four below were read directly in the browser:
+- **[@levelsio — Vibe Jam closed](https://x.com/levelsio/status/2050213288609235424)** (May 1 2026, **252.5K views**): 945 games, 242,212 players, ~12M views on X. In his words, this year's AI-made games "are starting to look like stuff you could find on Steam". **The quality bar for AI-built browser games jumped in one year.**
+- **[@levelsio — #1 winner](https://x.com/levelsio/status/2067437528320512144):** "A Game About Capybaras Delivering Food" won on **craft and detail**: PlayStation-style retro look, an AI-generated soundtrack, "so much effort gone into the details", and a concept that "fits the modern zeitgeist". The genre itself was ordinary.
+- **[@IGSpotlights — Swarmdustry Steam launch](https://x.com/IGSpotlights/status/2090423613942034739)** (Aug 20 2026): swarm-automation game ("fight back against cold machines"); the launch spotlight drew **130 views**. Swarm themes alone don't earn attention.
+- **[@HereComesSwarm](https://x.com/HereComesSwarm)** pinned post (Mar 5 2026, **5.2K views**): Early Access after ~9 years of development, pitched as a community-shaped survival RTS ("what you'd like to see next").
+
+**Implications.** Polish and a distinctive hook beat genre. OVERFIT's hook (an enemy that retrains on you) and its craft (procedural art, synthesised score, juice) carry the pitch; a swarm theme on its own wouldn't. Community shaping works for swarm RTS, so add a visible feedback channel before launching (see backlog).
