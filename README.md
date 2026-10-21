@@ -36,12 +36,14 @@ Instant play, no install, no downloads at runtime: every sprite is drawn procedu
 
 ```bash
 npm install
-npm run dev        # http://127.0.0.1:5173  (add ?quick=1 to jump straight into a skirmish)
-npm test           # vitest: pathfinding + simulation tests
-npm run build      # typecheck + production build to dist/
-npx tsx tools/headless.ts --seeds 5 --minutes 20   # headless bot soak / balance runs
-node tools/e2e.mjs # Playwright UI smoke test against the dev server
+npm run dev            # http://127.0.0.1:5173  (?quick=1 → skirmish, ?mission=first-light → Operation 1)
+npm run ci             # typecheck, unit/sim tests, campaign checks, strict headless soak, build
+npm run test:e2e       # Playwright UI suites against the dev server (uses system Chrome)
+npm run build          # typecheck + production build to dist/
+npm run build:artifact # single self-contained HTML (CSP-safe) → artifact/overfit.html
 ```
+
+Agent/dev handbook: `CLAUDE.md` (architecture invariants, commands, gotchas). Open work: `backlog.md`. CI runs on every push (`.github/workflows/ci.yml`).
 
 ### Architecture
 
