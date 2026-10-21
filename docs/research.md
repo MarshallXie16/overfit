@@ -85,3 +85,28 @@ Compiled 2026-10-15. Caveats: X.com blocks fetches (HTTP 402), so X findings com
 
 ## Sources (index)
 [Thronefall deep dive](https://newsletter.gamediscover.co/p/deep-dive-how-thronefall-went-minimal) · [Vibe Jam press](https://vibejam.com/2026/press) · [Vibe Jam guide](https://www.summerengine.com/blog/cursor-vibe-jam-2026-guide) · [Colyseus recap](https://colyseus.io/blog/vibe-jam-2026/) · [fly.pieter.com](https://levels.io/full-multiplayer-python-websockets-game-ai) · [Product Hunt games](https://www.producthunt.com/categories/games) · [Megabonk](https://en.wikipedia.org/wiki/Megabonk) · [They Are Billions reviews](https://vaporlens.app/app/644930/they_are_billions) · [Stormgate postmortem](https://esportsinsider.com/what-happened-to-stormgate) · [Swarmbreaker (Steam)](https://store.steampowered.com/app/4948940) · [AI War design](https://arcengames.com/designing-emergent-ai-part-4-asymetrical-goals/)
+
+---
+
+## Primary-source check — 2026-10-21
+
+The first research pass (2026-10-14) could not read X.com directly (HTTP 402). This pass read X posts as indexed by web search (`site:x.com` queries) and browsed Product Hunt directly. X search and X's embed endpoint both require sign-in or were rate-limited, so no live X feed was read.
+
+### X.com
+- **Vibe Jam 2026** (@levelsio) closed with **945 games and 242,212 players** (~12M views on X). Rules: at least 80–90% AI-written code, playable on the web with **no login or signup**, free-to-play. The winner was a cosy capybara delivery game, not a hardcore genre. Organisers added a "Vibe Portal" that links all entries into a mini-metaverse. Sources: [jam closed](https://x.com/levelsio/status/2050213288609235424), [2026 announcement](https://x.com/levelsio/status/2039777677435908421), [winner](https://x.com/levelsio/status/2067437528320512144), [Vibe Portal](https://x.com/levelsio/status/2042608526908919898).
+- **Swarm/horde strategy is active on X in 2026**:
+  - [Here Comes The Swarm](https://x.com/HereComesSwarm) markets itself as a "survival RTS with a pause button".
+  - [Swarmdustry](https://x.com/IGSpotlights/status/2090423613942034739) automates a bio-mechanical swarm.
+  - [Weather The Swarm](https://x.com/EntertainMeHub/status/2079544757030674461) was announced for 2027.
+  - Horde-survivor titles keep appearing ([Bandwagon](https://x.com/nexindie/status/2079534352887582835)).
+- **Browser RTS devlogs** exist but are rare (e.g. [Kings Claim](https://x.com/jeffluntgames/status/2055678186466275423)). The browser-RTS niche is thin on X.
+
+### Product Hunt (browsed directly)
+- **"Strategy game" search:** Frostpunk 2, Warcraft Rumble, Colonist.io (browser Catan), Kabza (conquer a real city map with friends), What Beats Rock (an AI-judged viral browser game).
+- **"AI game" search:** mostly AI game-creation tools (Veltos.ai, Nitrode, V2Fun) and AI-as-opponent or game-master experiences (AI Game Master).
+- **Pattern:** what lands on Product Hunt is either a tool for makers or a game whose **AI is the mechanic**. Polished browser strategy games with a clear AI hook are rare there.
+
+### What this means for OVERFIT
+1. **Positioning is validated.** "The enemy AI literally retrains on you" puts AI in the mechanic, which is the angle Product Hunt rewards. The swarm/horde theme is in fashion on X, and pause-friendly survival RTS is an explicit selling point there (OVERFIT has tactical pause).
+2. **Distribution fits the jam/X playbook.** OVERFIT is instant-play, has no login, is free, has a daily seed and a shareable result card, and is AI-written. It would qualify for a future Vibe Jam.
+3. **Launch story.** "An RTS designed, coded, drawn and scored end-to-end by AI agents, about an AI that learns from you" is the hook for both X and Product Hunt. A draft is in `docs/LAUNCH.md`. Posting needs Marshall's approval.
