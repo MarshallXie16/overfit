@@ -65,7 +65,8 @@ npm run build:artifact # single-file build → artifact/overfit.html (CSP-safe p
 Debug handles in the browser console: `window.overfit` (App: `.session.world`, `.session.r`, `.app`), `window.overfitDebug` (`Bot`, `step`).
 
 ## Git / deployment
-- Repo: github.com/MarshallXie16/overfit (**private**, personal account). Push via SSH alias `github.com-personal`; for `gh` API calls set `GH_TOKEN=$(gh auth token -h github.com -u MarshallXie16)`. Repo-local git identity is `Marshall Xie <marshallxie16@gmail.com>` — never commit with the work identity.
+- Repo: github.com/MarshallXie16/overfit (**public** since 2026-10-21, personal account). Push via SSH alias `github.com-personal`; for `gh` API calls set `GH_TOKEN=$(gh auth token -h github.com -u MarshallXie16)`. Repo-local git identity is `Marshall Xie <marshallxie16@gmail.com>` — never commit with the work identity.
 - CI: `.github/workflows/ci.yml` (typecheck, tests, campaign, strict soak, builds).
+- **Live:** https://marshallxie16.github.io/overfit/ — `.github/workflows/pages.yml` deploys `dist/` on every push to main (after typecheck + tests), with `VITE_PUBLIC_URL` set to the Pages URL. Approved by Marshall 2026-10-21.
 - itch.io upload zip: `npm run release:itch` → `release/overfit-itch.zip` (gitignored). `og:url`/`og:image`/`twitter:image` use `%VITE_PUBLIC_URL%`, defaulted in `vite.config.ts`/`vite.single.config.ts` to `https://marshallxie16.itch.io/overfit`; override with the env var or a gitignored `.env`.
-- Published build: private claude.ai artifact https://claude.ai/artifact/1oCHLkNNh3XxKGmfMQFhDX — republish `artifact/overfit.html` after `npm run build:artifact`. Public hosting (GitHub Pages / itch.io) has **not** been approved yet — ask first.
+- Published build: private claude.ai artifact https://claude.ai/artifact/1oCHLkNNh3XxKGmfMQFhDX — republish `artifact/overfit.html` after `npm run build:artifact`. itch.io has not been set up (the zip is ready via `npm run release:itch`; uploading is Marshall's call).

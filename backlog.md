@@ -3,7 +3,8 @@
 Ordered roughly by value. Move items to "Done" with the date when shipped.
 
 ## Now
-- [ ] Decide public hosting (GitHub Pages needs a public repo or Pro; itch.io accepts `dist-single/index.html`). Needs the owner's approval.
+- [ ] Optional: itch.io page (zip via `npm run release:itch`) — owner uploads.
+- [ ] Add a LICENSE if the code should be reusable (public repo without a license = all rights reserved).
 
 ## Next
 - [ ] Surge-arrow placement can overlap the F5–F8 protocol bar (upper-right sources).
@@ -25,5 +26,6 @@ Ordered roughly by value. Move items to "Done" with the date when shipped.
 ## Done
 - 2026-10-15 v1.0: full game (sim, renderer, procedural art, synthesised audio, HUD, 5-mission campaign, skirmish, Endless + daily), bot + headless soak, E2E suites, review-driven fixes.
 - 2026-10-21 GitHub repo + CI; project memory (`CLAUDE.md`).
+- 2026-10-21 Public: repo made public, GitHub Pages deploy workflow → https://marshallxie16.github.io/overfit/
 - 2026-10-21 GPU/power pass: single-pass Grid shader, own 60 fps frame limiter (30 in menus/idle), render-scale setting (auto 1.5×) + adaptive guard, no backdrop-filter, throttled HUD writes, fog upload on change, audio suspended in background tabs, retina screen-size bug fixed. GPU ≈55% → ≈5–14% (see `docs/perf-after-2026-10-21.txt`).
 - 2026-10-21 itch.io upload prep (not published): `npm run release:itch` → `release/overfit-itch.zip`, absolute share-card URLs from `VITE_PUBLIC_URL` (`.env`), "desktop only" notice for touch-only devices.

@@ -1,5 +1,7 @@
 # OVERFIT — *the swarm learns you*
 
+**▶ Play in your browser: https://marshallxie16.github.io/overfit/** (desktop, mouse + keyboard)
+
 A browser real-time strategy game about an AI apocalypse. You command the last human resistance cell against **AXIOM**, a rogue logistics optimiser whose robot swarm grows, spreads across the city, and **retrains on how you fight**.
 
 Instant play, no install, no downloads at runtime: every sprite is drawn procedurally with Canvas2D and every sound is synthesised with WebAudio.
