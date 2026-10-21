@@ -82,6 +82,8 @@ export class AudioEngine {
   private tokens = BUDGET_BURST;
   private tokenTime = 0;
   private paused = false;
+  /** The AudioContext was suspended by setBackground(true) and should resume when the page is visible again. */
+  private bgSuspended = false;
   private track: MusicTrack = 'none';
   private intensity = 0;
 
@@ -116,6 +118,8 @@ export class AudioEngine {
       const resumed = ctx.resume().catch(() => undefined);
       this.attach(ctx, bankRef(), false);
       this.installUnlock(ctx);
+      // the page may have been hidden while the context was being created
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') this.setBackground(true);
       await getBank();
       this.bankReady = true;
       await resumed;
@@ -125,10 +129,28 @@ export class AudioEngine {
     }
   }
 
+  /**
+   * Page hidden/visible. Hidden suspends the AudioContext: the audio thread stops, the context clock
+   * (and with it the music scheduler, which schedules against currentTime) freezes, and play() drops
+   * new sounds. Visible resumes it, but only if this method suspended it. Safe before init().
+   */
+  setBackground(hidden: boolean): void {
+    const live = this.live;
+    if (!live || live.state === 'closed') return;
+    if (hidden) {
+      this.bgSuspended = true;
+      live.suspend().catch(() => undefined);
+    } else if (this.bgSuspended) {
+      this.bgSuspended = false;
+      live.resume().catch(() => undefined);
+    }
+  }
+
   /** Re-resume on later gestures (iOS interruptions, autoplay policies). */
   private installUnlock(ctx: AudioContext): void {
     if (typeof window === 'undefined') return;
     const kick = (): void => {
+      if (this.bgSuspended && typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       if (ctx.state !== 'running' && ctx.state !== 'closed') ctx.resume().catch(() => undefined);
     };
     for (const ev of ['pointerdown', 'keydown', 'touchend']) {
@@ -514,12 +536,13 @@ export class AudioEngine {
   }
 
   /** @internal Diagnostics for the preview page / audio check. */
-  _debug(): { state: string; time: number; voices: number; sampleRate: number; bankSounds: number; bankBytes: number } {
+  _debug(): { state: string; time: number; voices: number; sampleRate: number; bankSounds: number; bankBytes: number; background: boolean } {
     const ctx = this.ctx;
     let bankBytes = 0;
     if (this.bank) for (const arr of this.bank.values()) for (const b of arr) bankBytes += b.length * b.numberOfChannels * 4;
     return {
       bankBytes,
+      background: this.bgSuspended,
       state: this.disabled ? 'disabled' : ctx ? (this.live ? this.live.state : 'offline') : 'uninitialised',
       time: ctx ? ctx.currentTime : 0,
       voices: this.voices.length,

@@ -6,3 +6,6 @@ output
 *.log
 dist-single
 artifact
+release
+.env
+.env.local

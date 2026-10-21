@@ -59,6 +59,18 @@ src/game/     session loop, campaign scripts, advisor, storage
 
 See `docs/GDD.md` (design), `docs/ARCHITECTURE.md` (technical contracts), `docs/STORY.md` (narrative) and `docs/research.md` (market research).
 
+## Release (itch.io)
+
+```bash
+npm run release:itch   # build:single, then zip dist-single/{index.html,og.png} -> release/overfit-itch.zip
+```
+
+The zip uses only relative paths, so it runs from a subpath (itch.io serves HTML5 games from one). Upload it as an itch.io HTML5 project; the step-by-step checklist is in `~/claude_projects/shipyard/releases/README.md`.
+
+**Public URL — change it if the host is not itch.io.** `og:url`, `og:image` and `twitter:image` in `index.html` must be absolute, so they are built from `VITE_PUBLIC_URL` in `.env` (default `https://marshallxie16.itch.io/overfit`). If the game lives anywhere else (another itch username or slug, GitHub Pages, your own domain), edit `.env` or run `VITE_PUBLIC_URL=https://host/path npm run release:itch`, then re-upload. On itch.io the share card for the project page comes from itch itself (its cover image, 630×500), so use a crop of `public/og.png` (1200×630) as the cover.
+
+Touch-only devices (coarse pointer, no fine pointer) see a dismissible "desktop only" notice from `index.html`; the game has no touch input.
+
 ## Credits
 
 Design, code, art and audio generated end-to-end by Claude (Anthropic) agents. Fonts: Chakra Petch and JetBrains Mono (SIL Open Font License). Engine: PixiJS (MIT).

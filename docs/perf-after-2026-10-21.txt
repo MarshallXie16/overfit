@@ -1,0 +1,26 @@
+viewport 1512x982 @2x, 10s windows, base http://127.0.0.1:4174/; system GPU idle baseline 9.6% (subtracted)
+title / base                   GPU   2% (→120Hz ~9%) | CPU total 0.26 cores | renderer 0.20 gpu 0.05 other 0.01 | main-thread task 4% (script 2%, style+layout 0%) | fps 30
+title / scale-sharp            GPU   4% (→120Hz ~16%) | CPU total 0.26 cores | renderer 0.20 gpu 0.05 other 0.01 | main-thread task 4% (script 3%, style+layout 0%) | fps 30
+title / scale-performance      GPU  -7% (→120Hz ~-29%) | CPU total 0.26 cores | renderer 0.20 gpu 0.06 other 0.00 | main-thread task 4% (script 3%, style+layout 0%) | fps 30
+early / base                   GPU   8% (→120Hz ~16%) | CPU total 0.33 cores | renderer 0.22 gpu 0.10 other 0.01 | main-thread task 6% (script 4%, style+layout 0%) | fps 60
+early / scale-sharp            GPU  16% (→120Hz ~31%) | CPU total 0.31 cores | renderer 0.20 gpu 0.09 other 0.01 | main-thread task 6% (script 4%, style+layout 0%) | fps 60
+early / scale-performance      GPU  -5% (→120Hz ~-9%) | CPU total 0.32 cores | renderer 0.21 gpu 0.10 other 0.01 | main-thread task 6% (script 4%, style+layout 0%) | fps 60
+battle / base                  GPU  -1% (→120Hz ~-5%) | CPU total 0.26 cores | renderer 0.18 gpu 0.07 other 0.01 | main-thread task 8% (script 6%, style+layout 0%) | fps 30
+battle / scale-sharp           GPU   4% (→120Hz ~16%) | CPU total 0.25 cores | renderer 0.18 gpu 0.06 other 0.00 | main-thread task 8% (script 6%, style+layout 0%) | fps 30
+battle / scale-performance     GPU   2% (→120Hz ~9%) | CPU total 0.25 cores | renderer 0.18 gpu 0.06 other 0.00 | main-thread task 8% (script 6%, style+layout 0%) | fps 30
+title / base                   GPU  -6% (→120Hz ~-24%) | CPU total 0.27 cores | renderer 0.21 gpu 0.06 other 0.01 | main-thread task 5% (script 3%, style+layout 0%) | fps 30
+title / scale-sharp            GPU   1% (→120Hz ~5%) | CPU total 0.27 cores | renderer 0.20 gpu 0.06 other 0.01 | main-thread task 5% (script 3%, style+layout 0%) | fps 30
+title / scale-performance      GPU   4% (→120Hz ~14%) | CPU total 0.26 cores | renderer 0.20 gpu 0.05 other 0.01 | main-thread task 4% (script 3%, style+layout 0%) | fps 30
+early / base                   GPU  -5% (→120Hz ~-10%) | CPU total 0.33 cores | renderer 0.22 gpu 0.10 other 0.01 | main-thread task 6% (script 4%, style+layout 0%) | fps 60
+early / scale-sharp            GPU   4% (→120Hz ~7%) | CPU total 0.31 cores | renderer 0.20 gpu 0.10 other 0.01 | main-thread task 6% (script 4%, style+layout 0%) | fps 60
+early / scale-performance      GPU  -8% (→120Hz ~-15%) | CPU total 0.29 cores | renderer 0.20 gpu 0.09 other 0.00 | main-thread task 6% (script 4%, style+layout 0%) | fps 60
+battle / base                  GPU   1% (→120Hz ~5%) | CPU total 0.26 cores | renderer 0.19 gpu 0.06 other 0.00 | main-thread task 8% (script 6%, style+layout 0%) | fps 30
+battle / scale-sharp           GPU   8% (→120Hz ~34%) | CPU total 0.25 cores | renderer 0.18 gpu 0.07 other 0.01 | main-thread task 8% (script 6%, style+layout 0%) | fps 30
+battle / scale-performance     GPU  -6% (→120Hz ~-26%) | CPU total 0.23 cores | renderer 0.17 gpu 0.06 other 0.00 | main-thread task 7% (script 6%, style+layout 0%) | fps 30
+viewport 1512x982 @2x, 10s windows, base http://127.0.0.1:4174/; system GPU idle baseline 0.4% (subtracted)
+battle / base                  GPU  18% (→120Hz ~35%) | CPU total 0.43 cores | renderer 0.35 gpu 0.08 other 0.01 | main-thread task 15% (script 13%, style+layout 0%) | fps 60
+battle / scale-sharp           GPU  20% (→120Hz ~39%) | CPU total 0.43 cores | renderer 0.34 gpu 0.08 other 0.01 | main-thread task 15% (script 13%, style+layout 0%) | fps 60
+battle / base                  GPU  12% (→120Hz ~25%) | CPU total 0.41 cores | renderer 0.32 gpu 0.08 other 0.01 | main-thread task 15% (script 13%, style+layout 0%) | fps 60
+battle / scale-sharp           GPU  22% (→120Hz ~45%) | CPU total 0.50 cores | renderer 0.39 gpu 0.10 other 0.01 | main-thread task 18% (script 15%, style+layout 0%) | fps 60
+battle / base                  GPU  11% (→120Hz ~23%) | CPU total 0.43 cores | renderer 0.34 gpu 0.08 other 0.01 | main-thread task 15% (script 13%, style+layout 0%) | fps 60
+battle / scale-sharp           GPU  18% (→120Hz ~35%) | CPU total 0.42 cores | renderer 0.33 gpu 0.08 other 0.01 | main-thread task 15% (script 13%, style+layout 0%) | fps 60

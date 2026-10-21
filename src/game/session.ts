@@ -69,6 +69,9 @@ export class Session {
 
   get speed(): number { return SPEEDS[this.speedIdx]; }
 
+  /** Nothing is being played right now (title-screen demo, paused or finished): the app may lower its frame rate. */
+  get idle(): boolean { return this.bot !== null || this.ended || this.world.paused; }
+
   togglePause(): void {
     this.world.paused = !this.world.paused;
     audio.setPaused(this.world.paused);

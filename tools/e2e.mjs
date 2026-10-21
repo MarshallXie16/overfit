@@ -125,6 +125,27 @@ const perf = await page.evaluate(() => ({ fps: window.overfit.session.fps, step:
 check('surge launched', perf.surge >= 1, JSON.stringify(perf));
 await shot('05-surge');
 
+// 9. retina regression: at 2x DPR (and any render scale) the camera centre must map to the viewport centre,
+//    and worldToScreen must agree with where Pixi actually draws.
+{
+  const ctx2 = await browser.newContext({ viewport: { width: 1512, height: 982 }, deviceScaleFactor: 2 });
+  const p2 = await ctx2.newPage();
+  p2.on('pageerror', (e) => errors.push('pageerror(2x): ' + e.message));
+  await p2.addInitScript(() => localStorage.setItem('overfit.settings', JSON.stringify({ edgeScroll: false, master: 0 })));
+  await p2.goto(base + '?quick=1&seed=7', { waitUntil: 'load' });
+  await p2.waitForFunction(() => window.overfit?.session?.ctl, null, { timeout: 20000 });
+  await p2.waitForTimeout(400);
+  const geo = await p2.evaluate(() => {
+    const r = window.overfit.session.r;
+    const c = r.worldToScreen(r.cam.x, r.cam.y);
+    const g = r.root.toGlobal({ x: r.cam.x * 32, y: r.cam.y * 32 });
+    return { res: window.overfit.app.renderer.resolution, cx: c.x, cy: c.y, gx: g.x, gy: g.y, w: innerWidth, h: innerHeight };
+  });
+  const okGeo = Math.abs(geo.cx - geo.w / 2) < 2 && Math.abs(geo.cy - geo.h / 2) < 2 && Math.abs(geo.gx - geo.cx) < 2 && Math.abs(geo.gy - geo.cy) < 2;
+  check('2x DPR: camera centre maps to viewport centre', okGeo, JSON.stringify(geo));
+  await ctx2.close();
+}
+
 console.log(`\n${results.filter((r) => r.ok).length}/${results.length} passed; console errors: ${errors.length}`);
 for (const e of errors.slice(0, 10)) console.log('  ERR', e);
 await browser.close();

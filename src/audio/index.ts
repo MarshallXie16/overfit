@@ -8,6 +8,7 @@
 //   audio.play('ui_click');                       // UI / non-positional
 //   audio.music('game'); audio.setIntensity(0.6);
 //   audio.stinger('surge');
+//   audio.setBackground(document.visibilityState === 'hidden'); // suspend/resume with the tab
 
 import { AudioEngine } from './engine';
 

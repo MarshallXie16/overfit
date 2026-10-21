@@ -49,6 +49,8 @@ export class Fx {
   private pool: Sprite[] = [];
   private lines: Line[] = [];
   private decals: { sp: Sprite; life: number; max: number }[] = [];
+  /** lineG holds geometry from the last frame (skip clear/rebuild when there is nothing to draw) */
+  private lineGDirty = false;
   shakeAmt = 0;
   /** world px view bounds for culling spawns */
   view = { x0: 0, y0: 0, x1: 0, y1: 0 };
@@ -193,9 +195,9 @@ export class Fx {
     }
     this.parts.length = j;
 
-    // lines
+    // lines (clearing an already-empty Graphics still forces a context rebuild every frame: skip it)
     const g = this.lineG;
-    g.clear();
+    if (this.lines.length || this.lineGDirty) g.clear();
     let k = 0;
     for (const l of this.lines) {
       l.life += dt;
@@ -212,6 +214,7 @@ export class Fx {
       this.lines[k++] = l;
     }
     this.lines.length = k;
+    this.lineGDirty = k > 0;
 
     // decals fade
     let d = 0;
@@ -233,5 +236,6 @@ export class Fx {
     this.decals.length = 0;
     this.lines.length = 0;
     this.lineG.clear();
+    this.lineGDirty = false;
   }
 }

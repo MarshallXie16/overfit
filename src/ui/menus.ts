@@ -1,7 +1,7 @@
 import { audio } from '../audio';
 import { MISSIONS, type MissionDef } from '../game/missions';
 import type { Session } from '../game/session';
-import { dailyNumber, dailySeed, store, todayKey } from '../game/storage';
+import { dailyNumber, dailySeed, store, todayKey, type FpsCap, type RenderScale } from '../game/storage';
 import type { Difficulty } from '../sim/types';
 import type { App } from '../main';
 
@@ -9,6 +9,19 @@ const DIFFS: { id: Difficulty; name: string; desc: string }[] = [
   { id: 'recruit', name: 'Recruit', desc: 'Slower Surges, gentler swarm.' },
   { id: 'veteran', name: 'Veteran', desc: 'The intended challenge.' },
   { id: 'nightmare', name: 'Nightmare', desc: 'AXIOM out-computes you. Good luck.' },
+];
+
+const FPS_OPTS: { v: FpsCap; name: string; desc: string }[] = [
+  { v: 30, name: '30', desc: '30 fps (battery saver): coolest and quietest; camera pans a little less smoothly.' },
+  { v: 60, name: '60', desc: '60 fps: plenty for an RTS. Recommended.' },
+  { v: 0, name: 'Display', desc: 'Match the display refresh rate (e.g. 120 Hz): smoothest, but runs much hotter.' },
+];
+
+const SCALE_OPTS: { v: RenderScale; name: string; desc: string }[] = [
+  { v: 'auto', name: 'Auto', desc: 'Auto: 1.5× on high-DPI screens, lower for very large windows or if the GPU falls behind.' },
+  { v: 'performance', name: 'Performance', desc: 'Performance: 1× — fastest and coolest, softer on Retina screens.' },
+  { v: 'balanced', name: 'Balanced', desc: 'Balanced: 1.5× — sharp enough on Retina at about half the GPU cost of native.' },
+  { v: 'sharp', name: 'Sharp', desc: 'Sharp: native resolution up to 2× — crispest, heaviest on the GPU and battery.' },
 ];
 
 export function scoreOf(s: Session): number {
@@ -169,6 +182,10 @@ export class Menus {
   // ---------------------------------------------------------------- settings
   settings(back: () => void): void {
     const s = store.settings;
+    const row = 'display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 16px;margin:10px 0 4px;font-size:14px';
+    const hint = 'font-size:12px;line-height:1.4;color:var(--muted);margin:0 0 8px;min-height:17px';
+    const seg = <T,>(name: string, opts: { v: T; name: string; desc: string }[], cur: T) =>
+      `<div class="seg" data-seg="${name}" style="flex:0 1 320px;min-width:0">${opts.map((o) => `<button data-v="${o.v}" class="${o.v === cur ? 'on' : ''}" title="${o.desc}">${o.name}</button>`).join('')}</div>`;
     this.show(`<div class="dialog clip"><h2>SETTINGS</h2>
       <label class="set">Master volume<input type="range" min="0" max="1" step="0.05" data-s="master" value="${s.master}"></label>
       <label class="set">Effects volume<input type="range" min="0" max="1" step="0.05" data-s="sfx" value="${s.sfx}"></label>
@@ -177,6 +194,11 @@ export class Menus {
       <label class="set">Edge scrolling<input type="checkbox" data-s="edgeScroll" ${s.edgeScroll ? 'checked' : ''}></label>
       <label class="set">Advisor tips (skirmish/endless)<input type="checkbox" data-s="advisor" ${s.advisor ? 'checked' : ''}></label>
       <label class="set">Show FPS<input type="checkbox" data-s="showFps" ${s.showFps ? 'checked' : ''}></label>
+      <h3>PERFORMANCE</h3>
+      <div style="${row}">Frame rate cap${seg('fps', FPS_OPTS, s.fpsCap)}</div>
+      <div style="${hint}" data-k="fps-hint"></div>
+      <div style="${row}">Render resolution${seg('scale', SCALE_OPTS, s.renderScale)}</div>
+      <div style="${hint}" data-k="scale-hint"></div>
       <button class="btn" data-a="back">Back</button></div>`);
     this.el!.querySelectorAll<HTMLInputElement>('[data-s]').forEach((inp) => inp.addEventListener('input', () => {
       const k = inp.dataset.s as keyof typeof s;
@@ -185,6 +207,17 @@ export class Menus {
       this.app.applySettings();
       if (k === 'sfx') audio.play('ui_click');
     }));
+    const hints = () => {
+      const f = FPS_OPTS.find((o) => o.v === s.fpsCap) ?? FPS_OPTS[1];
+      const sc = SCALE_OPTS.find((o) => o.v === s.renderScale) ?? SCALE_OPTS[0];
+      const ri = this.app.renderInfo();
+      const fh = this.el?.querySelector('[data-k=fps-hint]'), sh = this.el?.querySelector('[data-k=scale-hint]');
+      if (fh) fh.textContent = `${f.desc} Menus and pause always run at 30.`;
+      if (sh) sh.textContent = `${sc.desc} In game: ${ri.w}×${ri.h} px (${+ri.res.toFixed(2)}×${ri.downgraded ? ', lowered for performance' : ''}).`;
+    };
+    hints();
+    this.bindSeg('fps', (v) => { s.fpsCap = +v as FpsCap; store.saveSettings(); this.app.applySettings(); hints(); });
+    this.bindSeg('scale', (v) => { this.app.setRenderScale(v as RenderScale); hints(); });
     this.on('[data-a=back]', back);
   }
 

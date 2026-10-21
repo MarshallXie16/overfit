@@ -42,14 +42,20 @@ export class Hud {
   private buttons: Btn[] = [];
   private buildMenu = false;
   private cardKey = '';
-  private alerts: { el: HTMLElement; t: number; x: number; y: number }[] = [];
+  private alerts: { el: HTMLElement; t: number; x: number; y: number; faded?: boolean }[] = [];
   private lastAlertPos: { x: number; y: number } | null = null;
   private radioQueue: { speaker: string; text: string; axiom: boolean }[] = [];
   private radioT = 0;
   private toastT = 0;
   private pings: { x: number; y: number; t: number; color: string }[] = [];
   private surgeArrows: HTMLElement[] = [];
+  private arrowXf: string[] = [];
   private lastVals: Record<string, string> = {};
+  private styleCache = new WeakMap<HTMLElement, Record<string, string>>();
+  private lastThreat = -1;
+  private topT = 0;
+  private announceT = 0;
+  private protoCd = new Map<string, HTMLElement>();
   sound: (name: string) => void = () => {};
   onMenu: () => void = () => {};
   onSpeed: () => void = () => {};
@@ -61,7 +67,7 @@ export class Hud {
     this.root = document.createElement('div');
     this.root.id = 'hud';
     this.root.innerHTML = `
-      <div class="vignette"></div>
+      <div class="vignette" data-k="vignette"></div>
       <div class="topbar panel">
         <div class="res scrap" data-tip="scrap"><i class="ic"></i><span class="lbl">Scrap</span><b data-k="scrap">0</b></div>
         <div class="res power" data-tip="power"><i class="ic"></i><span class="lbl">Power</span><b data-k="power">0</b></div>
@@ -86,12 +92,13 @@ export class Hud {
       <div data-k="radio"></div>
       <div class="toast" data-k="toast"></div>
       <div class="bottom">
-        <div class="minimap panel clip"><canvas data-k="minimap" width="184" height="176"></canvas></div>
+        <div class="minimap panel"><canvas data-k="minimap" width="184" height="176"></canvas></div>
         <div class="selpanel panel clip" data-k="sel"></div>
         <div class="cmdcard panel clip" data-k="card"></div>
       </div>
       <div class="tooltip" data-k="tooltip"></div>`;
     parent.appendChild(this.root);
+    window.addEventListener('resize', this.onResize);
     this.root.querySelectorAll<HTMLElement>('[data-k]').forEach((e) => { this.el[e.dataset.k!] = e; });
     this.minimap = this.el.minimap as HTMLCanvasElement;
     const pips = this.el.pips;
@@ -106,7 +113,12 @@ export class Hud {
     this.onSelection();
   }
 
-  destroy(): void { this.root.remove(); }
+  destroy(): void { this.root.remove(); window.removeEventListener('resize', this.onResize); }
+
+  // Viewport size in CSS px, cached on resize (reading innerWidth per frame can force a synchronous layout).
+  private vw = window.innerWidth;
+  private vh = window.innerHeight;
+  private onResize = (): void => { this.vw = window.innerWidth; this.vh = window.innerHeight; };
 
   // ---------------------------------------------------------------- icons
   icon(id: string): string {
@@ -128,14 +140,69 @@ export class Hud {
     return u;
   }
 
-  // ---------------------------------------------------------------- top bar
+  // ---------------------------------------------------------------- DOM write helpers
+  // The HUD is composited over a canvas that redraws every frame (up to 120 Hz). Every DOM write invalidates style and
+  // re-rasters part of the HUD layer, so all writes go through these guards and skip values that did not change.
   private set(k: string, v: string): void {
     if (this.lastVals[k] === v) return;
     this.lastVals[k] = v;
     this.el[k].textContent = v;
   }
 
+  private sty(el: HTMLElement, prop: 'width' | 'display' | 'background' | 'transform', v: string): void {
+    let c = this.styleCache.get(el);
+    if (!c) { c = {}; this.styleCache.set(el, c); }
+    if (c[prop] === v) return;
+    c[prop] = v;
+    el.style[prop] = v;
+  }
+
+  /** Fill fraction as a width, quantised to 0.1% so sub-pixel drift does not trigger repaints. */
+  private bar(el: HTMLElement, f: number): void { this.sty(el, 'width', `${Math.round(Math.max(0, Math.min(1, f)) * 1000) / 10}%`); }
+
+  private cls(el: Element, v: string): void { if (el.className !== v) el.className = v; }
+
+  private text(el: Element, v: string): void { if (el.textContent !== v) el.textContent = v; }
+
+  /** Restart a CSS animation without a forced reflow: swap between two classes bound to identical @keyframes. */
+  private restartAnim(el: HTMLElement, a: string, b: string): void {
+    const useB = el.classList.contains(a);
+    el.classList.remove(useB ? a : b);
+    el.classList.add(useB ? b : a);
+  }
+
+  // ---------------------------------------------------------------- top bar
   update(dt: number): void {
+    const w = this.w;
+    // Numbers, clocks and timers: 10 Hz is plenty (they change at most a few times a second).
+    this.topT -= dt;
+    if (this.topT <= 0) { this.topT = 0.1; this.updateTop(); this.updateBoss(); }
+    this.slowT -= dt;
+    if (this.slowT <= 0) { this.slowT = 0.25; this.updateModel(); this.updateProtocols(); }
+    // alerts fade
+    for (let i = this.alerts.length - 1; i >= 0; i--) {
+      const a = this.alerts[i];
+      a.t += dt;
+      if (a.t > 7 && !a.faded) { a.faded = true; a.el.classList.add('fade'); }
+      if (a.t > 7.7) { a.el.remove(); this.alerts.splice(i, 1); }
+    }
+    // radio
+    if (this.radioT > 0) { this.radioT -= dt; if (this.radioT <= 0) { this.el.radio.innerHTML = ''; this.nextRadio(); } }
+    if (this.toastT > 0) { this.toastT -= dt; if (this.toastT <= 0) this.el.toast.classList.remove('show'); }
+    // drop the finished announcement so its (transparent) compositor layer goes away
+    if (this.announceT > 0) { this.announceT -= dt; if (this.announceT <= 0) this.el.announce.innerHTML = ''; }
+    this.miniT -= dt;
+    if (this.miniT <= 0) { this.miniT = 0.2; this.drawMinimap(); }
+    this.cardT -= dt;
+    if (this.cardT <= 0) { this.cardT = 0.15; this.refreshCard(); this.refreshSelDynamic(); this.refreshObjectives(); }
+    // per frame: arrows follow the camera (transform-only writes, skipped when unchanged)
+    this.updateSurgeArrows();
+    this.attackT -= dt;
+    if (this.attackT <= 0) { this.attackT = 0.5; this.checkUnderAttack(); }
+    this.sty(this.el.paused, 'display', w.paused ? 'block' : 'none');
+  }
+
+  private updateTop(): void {
     const w = this.w, H = w.human, A = w.axiom;
     this.set('scrap', String(Math.floor(H.scrap)));
     this.set('power', `${H.powerUsed}/${H.power}`);
@@ -148,44 +215,29 @@ export class Hud {
     this.set('swarm', String(A.units));
     this.set('grid', String(A.creepTiles));
     const sb = this.el.surgebox;
-    if (!A.tuning.surges) { this.set('surge', 'NO SURGES DETECTED'); sb.className = 'surge'; }
-    else if (A.surgeActive) { this.set('surge', `SURGE ${A.surgeN} IN PROGRESS`); sb.className = 'surge active'; }
+    if (!A.tuning.surges) { this.set('surge', 'NO SURGES DETECTED'); this.cls(sb, 'surge'); }
+    else if (A.surgeActive) { this.set('surge', `SURGE ${A.surgeN} IN PROGRESS`); this.cls(sb, 'surge active'); }
     else {
       const cascade = (A.surgeN + 1) % 4 === 0;
       this.set('surge', `${cascade ? 'CASCADE' : 'SURGE'} ${A.surgeN + 1} IN ${fmtTime(Math.max(0, A.surgeT))}`);
-      sb.className = A.surgeT < 30 ? 'surge hot' : 'surge';
+      this.cls(sb, A.surgeT < 30 ? 'surge hot' : 'surge');
     }
-    const pips = this.el.pips.children;
-    for (let i = 0; i < 10; i++) pips[i].classList.toggle('on', i < A.threat);
-    this.slowT -= dt;
-    if (this.slowT <= 0) { this.slowT = 0.1; this.updateModel(); this.updateProtocols(); }
-    // alerts fade
-    for (let i = this.alerts.length - 1; i >= 0; i--) {
-      const a = this.alerts[i];
-      a.t += dt;
-      if (a.t > 7) a.el.classList.add('fade');
-      if (a.t > 7.7) { a.el.remove(); this.alerts.splice(i, 1); }
+    if (A.threat !== this.lastThreat) {
+      this.lastThreat = A.threat;
+      const pips = this.el.pips.children;
+      for (let i = 0; i < 10; i++) pips[i].classList.toggle('on', i < A.threat);
     }
-    // radio
-    if (this.radioT > 0) { this.radioT -= dt; if (this.radioT <= 0) { this.el.radio.innerHTML = ''; this.nextRadio(); } }
-    if (this.toastT > 0) { this.toastT -= dt; if (this.toastT <= 0) this.el.toast.classList.remove('show'); }
-    this.miniT -= dt;
-    if (this.miniT <= 0) { this.miniT = 0.2; this.drawMinimap(); }
-    this.cardT -= dt;
-    if (this.cardT <= 0) { this.cardT = 0.15; this.refreshCard(); this.refreshSelDynamic(); this.refreshObjectives(); }
-    this.updateSurgeArrows();
-    let boss: Entity | null = null;
-    if (w.tick % 5 === 0 || this.bossId) {
-      const b = this.bossId ? w.get(this.bossId) : undefined;
-      if (b && w.isVisible(b.x, b.y)) boss = b;
-      else if (w.tick % 5 === 0) { boss = w.entities.find((e) => e.alive && e.kind === 'colossus' && e.team === AXIOM && w.isVisible(e.x, e.y)) ?? null; }
-      this.bossId = boss ? boss.id : 0;
-      this.el.boss.style.display = boss ? 'flex' : 'none';
-      if (boss) this.el.bossfill.style.width = `${(boss.hp / boss.maxHp) * 100}%`;
-    }
-    this.attackT -= dt;
-    if (this.attackT <= 0) { this.attackT = 0.5; this.checkUnderAttack(); }
-    this.el.paused.style.display = w.paused ? 'block' : 'none';
+  }
+
+  private updateBoss(): void {
+    const w = this.w;
+    const b = this.bossId ? w.get(this.bossId) : undefined;
+    let boss: Entity | null = b && b.alive && w.isVisible(b.x, b.y) ? b : null;
+    if (!boss) boss = w.entities.find((e) => e.alive && e.kind === 'colossus' && e.team === AXIOM && w.isVisible(e.x, e.y)) ?? null;
+    this.bossId = boss ? boss.id : 0;
+    this.sty(this.el.boss, 'display', boss ? 'flex' : 'none');
+    // scaleX instead of width: the fill moves on the compositor (transition: transform) instead of relayout + repaint
+    if (boss) this.sty(this.el.bossfill, 'transform', `scaleX(${Math.round(Math.max(0, boss.hp / boss.maxHp) * 1000) / 1000})`);
   }
 
   // ---------------------------------------------------------------- AXIOM model
@@ -202,12 +254,12 @@ export class Hud {
   private updateModel(): void {
     const A = this.w.axiom;
     this.set('m_ep', `EPOCH ${A.epoch} · ${Math.ceil(A.epochT)}s`);
-    this.el.m_ebar.style.width = `${(1 - A.epochT / A.epochLen) * 100}%`;
+    this.bar(this.el.m_ebar, 1 - A.epochT / A.epochLen);
     const tot = DAMAGE_TYPES.reduce((s, t) => s + A.dmgTaken[t], 0) || 1;
     for (const t of DAMAGE_TYPES) {
-      this.el['m_r-' + t].style.width = `${(A.resist[t] / 0.6) * 60}%`;
-      this.el['m_v-' + t].style.width = `${(A.vuln[t] / 0.4) * 40}%`;
-      this.el['m_l-' + t].style.width = `${(A.dmgTaken[t] / tot) * 100}%`;
+      this.bar(this.el['m_r-' + t], (A.resist[t] / 0.6) * 0.6);
+      this.bar(this.el['m_v-' + t], (A.vuln[t] / 0.4) * 0.4);
+      this.bar(this.el['m_l-' + t], A.dmgTaken[t] / tot);
       const mul = Math.max(0.1, 1 - A.resist[t] + A.vuln[t]);
       const me = this.el['m_m-' + t];
       const s = `×${mul.toFixed(2)}`;
@@ -233,6 +285,7 @@ export class Hud {
       d.className = 'proto';
       d.dataset.id = id;
       d.innerHTML = `<img src="${this.icon('proto_' + id)}"><span class="hk">${def.hotkey}</span><span class="cost">${def.data}◆</span><div class="cd" style="display:none"></div>`;
+      this.protoCd.set(id, d.querySelector<HTMLElement>('.cd')!);
       d.onclick = () => this.useProtocol(id);
       d.onmouseenter = () => {
         const chk = protocolAvailable(this.w, id);
@@ -251,8 +304,8 @@ export class Hud {
       const cd = this.w.human.protocolCd[id] ?? 0;
       d.classList.toggle('locked', locked);
       d.classList.toggle('poor', !locked && this.w.human.data < def.data);
-      const c = d.querySelector<HTMLElement>('.cd')!;
-      if (cd > 0) { c.style.display = 'flex'; c.textContent = String(Math.ceil(cd)); } else c.style.display = 'none';
+      const c = this.protoCd.get(id)!;
+      if (cd > 0) { this.sty(c, 'display', 'flex'); this.text(c, String(Math.ceil(cd))); } else this.sty(c, 'display', 'none');
     }
   }
 
@@ -282,16 +335,16 @@ export class Hud {
         case 'error': this.toast(ev.msg as string); this.sound('ui_error'); break;
         case 'radio': this.radio(ev.speaker as string, ev.text as string); break;
         case 'surge_warn': this.announce(ev.cascade ? 'CASCADE INBOUND' : 'SURGE INBOUND', 'T-minus 30 seconds', ''); break;
-        case 'surge_start': this.announce(ev.cascade ? `CASCADE ${ev.n}` : `SURGE ${ev.n}`, `${ev.count} machines inbound`, ''); this.root.querySelector('.vignette')!.classList.remove('surge'); void (this.root.querySelector('.vignette') as HTMLElement).offsetWidth; this.root.querySelector('.vignette')!.classList.add('surge'); break;
+        case 'surge_start': this.announce(ev.cascade ? `CASCADE ${ev.n}` : `SURGE ${ev.n}`, `${ev.count} machines inbound`, ''); this.restartAnim(this.el.vignette, 'surging', 'surging2'); break;
         case 'surge_end': this.announce('SURGE REPELLED', 'Rebuild. Expand. Strike back.', 'teal'); break;
         case 'epoch': {
           if (!ev.type) break;
           const t = ev.type as DamageType;
           this.announce('AXIOM RETRAINED', `Resists ${TYPE_LABEL[t]} ${Math.round((ev.resist as number) * 100)}% · now weak to ${TYPE_LABEL[COUNTER_OF[t]]}`, '');
-          this.el.model.classList.remove('flash'); void this.el.model.offsetWidth; this.el.model.classList.add('flash');
+          this.restartAnim(this.el.model, 'flash', 'flash2');
           break;
         }
-        case 'forgetting': this.announce('CATASTROPHIC FORGETTING', 'AXIOM adaptations halved', 'teal'); this.el.model.classList.remove('flash'); void this.el.model.offsetWidth; this.el.model.classList.add('flash'); break;
+        case 'forgetting': this.announce('CATASTROPHIC FORGETTING', 'AXIOM adaptations halved', 'teal'); this.restartAnim(this.el.model, 'flash', 'flash2'); break;
         case 'research_done': this.alert(`Research complete: ${ev.name}`, 0, 0, 'info'); this.cardKey = ''; break;
         case 'build_done': if (ev.kind !== 'wall') this.alert(`${BUILDINGS[ev.kind as string]?.name ?? ev.kind} online`, ev.x as number, ev.y as number, 'info'); this.cardKey = ''; break;
         case 'unit_ready': this.cardKey = ''; break;
@@ -322,6 +375,7 @@ export class Hud {
   announce(big: string, sub: string, cls: string): void {
     const a = this.el.announce;
     a.innerHTML = `<div class="big ${cls}">${big}<span class="sub">${sub}</span></div>`;
+    this.announceT = 3.3; // the CSS animation is 3.2 s (fill: forwards)
   }
 
   radio(speaker: string, text: string): void {
@@ -373,23 +427,28 @@ export class Hud {
     const A = this.w.axiom;
     const show = A.tuning.surges && !A.surgeActive && A.surgeT < 30 && A.surgeT > 0;
     const pts = show ? A.surgeFrom : [];
-    while (this.surgeArrows.length < pts.length) { const d = document.createElement('div'); d.className = 'edgearrow'; this.root.appendChild(d); this.surgeArrows.push(d); }
-    const W = this.r.screenW, Hh = this.r.screenH;
+    if (!pts.length && !this.surgeArrows.length) return;
+    while (this.surgeArrows.length < pts.length) { const d = document.createElement('div'); d.className = 'edgearrow'; d.style.display = 'none'; this.root.appendChild(d); this.surgeArrows.push(d); this.arrowXf.push(''); }
+    // HUD space is the CSS viewport (#hud and the game canvas are both fixed, inset 0). worldToScreen returns stage
+    // coordinates, which are already CSS px (autoDensity + resizeTo window; root.position is derived from the same
+    // values), so they are used as-is: no rescaling by screenW, whatever the render resolution is.
+    const W = this.vw, Hh = this.vh;
     for (let i = 0; i < this.surgeArrows.length; i++) {
       const el = this.surgeArrows[i];
       const p = pts[i];
-      if (!p) { el.style.display = 'none'; continue; }
+      if (!p) { this.sty(el, 'display', 'none'); continue; }
       const s = this.r.worldToScreen(p.x, p.y);
-      const onScreen = s.x > 0 && s.x < W && s.y > 40 && s.y < Hh - 210;
-      if (onScreen) { el.style.display = 'none'; continue; }
+      const sx = s.x, sy = s.y;
+      const onScreen = sx > 0 && sx < W && sy > 40 && sy < Hh - 210;
+      if (onScreen) { this.sty(el, 'display', 'none'); continue; }
       const cx = W / 2, cy = (Hh - 170) / 2;
-      const ang = Math.atan2(s.y - cy, s.x - cx);
+      const ang = Math.atan2(sy - cy, sx - cx);
       const rx = W / 2 - 40, ry = (Hh - 260) / 2;
       const k = Math.min(rx / Math.abs(Math.cos(ang) || 1e-6), ry / Math.abs(Math.sin(ang) || 1e-6));
-      el.style.display = 'block';
-      el.style.left = `${cx + Math.cos(ang) * k - 14}px`;
-      el.style.top = `${cy + Math.sin(ang) * k}px`;
-      el.style.transform = `rotate(${ang + Math.PI / 2}rad)`;
+      this.sty(el, 'display', 'block');
+      // transform-only positioning (the arrow is its own compositor layer): no layout, no repaint while the camera pans
+      const xf = `translate(${Math.round(cx + Math.cos(ang) * k - 14)}px, ${Math.round(cy + Math.sin(ang) * k)}px) rotate(${(ang + Math.PI / 2).toFixed(2)}rad)`;
+      if (this.arrowXf[i] !== xf) { this.arrowXf[i] = xf; el.style.transform = xf; }
     }
   }
 
@@ -515,9 +574,10 @@ export class Hud {
 
   showTip(anchor: HTMLElement, html: string): void {
     const t = this.el.tooltip;
+    // Read the anchor before writing (layout is clean at input-event time), then one measurement of the tooltip alone.
+    const r = anchor.getBoundingClientRect();
     t.innerHTML = html;
     t.style.display = 'block';
-    const r = anchor.getBoundingClientRect();
     const tw = t.offsetWidth, th = t.offsetHeight;
     let x = r.left + r.width / 2 - tw / 2, y = r.top - th - 8;
     if (y < 44) y = r.bottom + 8;
@@ -574,7 +634,7 @@ export class Hud {
     if (sel.length !== 1) {
       if (sel.length > 1) {
         const items = p.querySelectorAll<HTMLElement>('.mitem');
-        items.forEach((m) => { const e = this.w.get(+m.dataset.id!); const i = m.querySelector<HTMLElement>('.hp i'); if (e && i) i.style.width = `${(e.hp / e.maxHp) * 100}%`; });
+        items.forEach((m) => { const e = this.w.get(+m.dataset.id!); const i = m.querySelector<HTMLElement>('.hp i'); if (e && i) this.bar(i, e.hp / e.maxHp); });
       }
       return;
     }
@@ -583,11 +643,12 @@ export class Hud {
     if (hp) {
       if (e.isUnit || e.isBuilding) {
         const f = Math.max(0, e.hp / e.maxHp);
-        (hp.firstElementChild as HTMLElement).style.width = `${f * 100}%`;
-        (hp.firstElementChild as HTMLElement).style.background = f > 0.6 ? 'var(--good)' : f > 0.3 ? 'var(--amber)' : 'var(--red)';
-        hp.querySelector('span')!.textContent = e.kind === 'server_farm' ? '' : `${Math.ceil(e.hp)}/${Math.ceil(e.maxHp)}`;
-        hp.style.display = e.kind === 'server_farm' ? 'none' : 'block';
-      } else hp.style.display = 'none';
+        const fill = hp.firstElementChild as HTMLElement;
+        this.bar(fill, f);
+        this.sty(fill, 'background', f > 0.6 ? 'var(--good)' : f > 0.3 ? 'var(--amber)' : 'var(--red)');
+        this.text(hp.querySelector('span')!, e.kind === 'server_farm' ? '' : `${Math.ceil(e.hp)}/${Math.ceil(e.maxHp)}`);
+        this.sty(hp, 'display', e.kind === 'server_farm' ? 'none' : 'block');
+      } else this.sty(hp, 'display', 'none');
     }
     const st = p.querySelector<HTMLElement>('[data-s=stats]');
     if (st) {
@@ -632,7 +693,7 @@ export class Hud {
         q.querySelectorAll<HTMLElement>('.qitem').forEach((el) => { el.onclick = () => { this.ctl.issue({ c: 'cancelTrain', building: e.id, index: +el.dataset.i! }); this.sound('ui_click'); }; });
       }
       const first = q.querySelector<HTMLElement>('.qitem .prog');
-      if (first && e.prod[0]) first.style.width = `${(e.prod[0].t / e.prod[0].total) * 100}%`;
+      if (first && e.prod[0]) this.bar(first, e.prod[0].t / e.prod[0].total);
     }
   }
 
@@ -782,11 +843,8 @@ export class Hud {
     }
     btns.forEach((b, i) => {
       const el = card.children[i] as HTMLElement;
-      const cls = `cbtn${b.disabled ? ' disabled' : ''}${b.poor ? ' poor' : ''}${b.active ? ' active' : ''}`;
-      if (el.className !== cls) el.className = cls;
-      const pr = el.querySelector<HTMLElement>('.prog')!;
-      const wpc = b.progress !== undefined ? `${Math.min(1, b.progress) * 100}%` : '0';
-      if (pr.style.width !== wpc) pr.style.width = wpc;
+      this.cls(el, `cbtn${b.disabled ? ' disabled' : ''}${b.poor ? ' poor' : ''}${b.active ? ' active' : ''}`);
+      this.bar(el.lastElementChild as HTMLElement, b.progress !== undefined ? b.progress : 0);
     });
   }
 

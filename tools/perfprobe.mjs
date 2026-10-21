@@ -101,6 +101,8 @@ const TOGGLES = {
   'no-hud-dom': async (p) => { await p.addStyleTag({ content: '#hud,.overlay{display:none!important}' }); },
   'fps-30': async (p) => { await p.evaluate(() => { window.overfit.app.ticker.maxFPS = 30; }); },
   'no-audio': null, // handled by not clicking
+  'scale-sharp': async (p) => { await p.evaluate(() => window.overfit.setRenderScale('sharp')); },
+  'scale-performance': async (p) => { await p.evaluate(() => window.overfit.setRenderScale('performance')); },
   'ticker-stopped': async (p) => { await p.evaluate(() => { window.overfit.app.ticker.stop(); }); },
   'no-vignette': async (p) => { await p.addStyleTag({ content: '.vignette{display:none!important}' }); },
   'no-css-effects': async (p) => { await p.addStyleTag({ content: '*{backdrop-filter:none!important;clip-path:none!important;box-shadow:none!important;animation:none!important}.vignette{display:none!important}' }); },
@@ -141,6 +143,7 @@ const SCENARIOS = {
       B('gun_turret', 6, -2); B('tesla', 6, 2); B('missile', -3, 6); B('gun_turret', 2, 7); B('generator', -4, -3); B('generator', -7, -3);
       for (let i = 0; i < 50; i++) { const u = w.spawnUnit(['rifleman', 'arc_trooper', 'rocketeer', 'bulldog', 'volt', 'thumper'][i % 6], 1, hq.x + 5 + (i % 8) * 0.9, hq.y - 4 + Math.floor(i / 8) * 0.9); u.ax = u.x; u.ay = u.y; }
       w.revealAll = true;
+      w.flags.noHqDefeat = true; // keep the battle live (an ended game drops to the idle frame cap)
       const ang = Math.atan2(w.h / 2 - hq.y, w.w / 2 - hq.x);
       window.__spawn = () => {
         const kinds = ['skitter', 'skitter', 'gunner', 'brute', 'lancer', 'wasp', 'sapper'];

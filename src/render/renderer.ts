@@ -1,7 +1,8 @@
-import { Application, CanvasSource, Container, Graphics, Sprite, Texture, TilingSprite } from 'pixi.js';
+import { Application, BufferImageSource, CanvasSource, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { BUILDINGS } from '../sim/data/defs';
 import { AXIOM, HUMAN, type SimEvent } from '../sim/types';
 import type { Entity, World } from '../sim/world';
+import { CreepLayer } from './creepMesh';
 import { ART_SCALE, Fx, TILE } from './fx';
 import type { TextureBank, TexInfo } from './textures';
 
@@ -55,16 +56,17 @@ export class GameRenderer {
   fx: Fx;
   private views = new Map<number, View>();
   private stamp = 0;
-  private fogCanvas: HTMLCanvasElement | null = null;
-  private fogTex: Texture | null = null;
-  private fogData: ImageData | null = null;
-  private creepCanvas: HTMLCanvasElement | null = null;
-  private creepMaskCanvas: HTMLCanvasElement | null = null;
-  private creepTex: Texture | null = null;
-  private creepMaskTex: Texture | null = null;
-  private creepPattern: TilingSprite | null = null;
-  private creepTick = -1;
+  /** fog: 1 texel per tile, premultiplied RGBA uploaded straight from this buffer (no canvas round-trip) */
+  private fogData: Uint8Array | null = null;
+  private fogSrc: BufferImageSource | null = null;
+  private fogSprite: Sprite | null = null;
   private fogTick = -1;
+  /** AXIOM Grid: one shader quad (see creepMesh.ts) */
+  private creep: CreepLayer | null = null;
+  /** index of the last 10-tick creep period fed to the layer (sim updates creep when tick % 10 === 5) */
+  private creepEpoch = Number.NaN;
+  /** tick at which the creep layer last received a changed field (start of its prev→cur blend) */
+  private creepBlendTick = 0;
   private ownedTex: Texture[] = [];
   private seen = new Set<number>();
   private projSprites: Sprite[] = [];
@@ -123,32 +125,18 @@ export class GameRenderer {
         this.terrainLayer.addChild(sp);
       }
     }
-    // creep: dark tint + masked circuit pattern
-    this.creepCanvas = document.createElement('canvas');
-    this.creepCanvas.width = w.w; this.creepCanvas.height = w.h;
-    this.creepMaskCanvas = document.createElement('canvas');
-    this.creepMaskCanvas.width = w.w; this.creepMaskCanvas.height = w.h;
-    this.creepTex = this.canvasTex(this.creepCanvas);
-    this.creepMaskTex = this.canvasTex(this.creepMaskCanvas);
-    const tint = new Sprite(this.creepTex);
-    tint.scale.set(TILE);
-    this.creepLayer.addChild(tint);
-    const pat = this.bank.get('fx:creep_pattern');
-    this.creepPattern = new TilingSprite({ texture: pat.tex, width: w.w * TILE, height: w.h * TILE });
-    this.creepPattern.tileScale.set(0.5);
-    const mask = new Sprite(this.creepMaskTex);
-    mask.scale.set(TILE);
-    this.creepLayer.addChild(this.creepPattern, mask);
-    this.creepPattern.mask = mask;
+    // creep: single shader quad (stain + circuitry + frontier glow), no mask/filter passes
+    this.creep = new CreepLayer(this.app.renderer, this.bank.get('fx:creep_pattern').tex, w.w, w.h);
+    this.creepLayer.addChild(this.creep.view);
+    this.creepEpoch = Number.NaN;
     // fog
-    this.fogCanvas = document.createElement('canvas');
-    this.fogCanvas.width = w.w; this.fogCanvas.height = w.h;
-    this.fogData = this.fogCanvas.getContext('2d')!.createImageData(w.w, w.h);
-    this.fogTex = this.canvasTex(this.fogCanvas);
-    const fog = new Sprite(this.fogTex);
-    fog.scale.set(TILE);
-    this.fogLayer.addChild(fog);
-    this.creepTick = -1;
+    this.fogData = new Uint8Array(w.w * w.h * 4);
+    this.fogSrc = new BufferImageSource({ resource: this.fogData, width: w.w, height: w.h, format: 'rgba8unorm', alphaMode: 'premultiplied-alpha', scaleMode: 'linear' });
+    const fogTex = new Texture({ source: this.fogSrc });
+    this.ownedTex.push(fogTex);
+    this.fogSprite = new Sprite(fogTex);
+    this.fogSprite.scale.set(TILE);
+    this.fogLayer.addChild(this.fogSprite);
     this.fogTick = -1;
   }
 
@@ -169,6 +157,8 @@ export class GameRenderer {
     this.views.clear();
     this.seen.clear();
     this.terrainLayer.removeChildren().forEach((c) => c.destroy());
+    this.creep?.destroy();
+    this.creep = null;
     this.creepLayer.removeChildren().forEach((c) => c.destroy());
     this.fogLayer.removeChildren().forEach((c) => c.destroy());
     for (const s of this.projSprites) s.destroy();
@@ -177,7 +167,9 @@ export class GameRenderer {
     this.fx.clear();
     for (const t of this.ownedTex) t.destroy(true);
     this.ownedTex = [];
-    this.creepTex = this.creepMaskTex = this.fogTex = null;
+    this.fogSrc = null;
+    this.fogSprite = null;
+    this.fogData = null;
     this.world = null;
   }
 
@@ -189,8 +181,9 @@ export class GameRenderer {
   }
 
   // ---------------------------------------------------------------- coordinates
-  get screenW(): number { return this.app.renderer.width / this.app.renderer.resolution; }
-  get screenH(): number { return this.app.renderer.height / this.app.renderer.resolution; }
+  /** Viewport size in CSS pixels (Pixi v8: app.screen is already CSS px, independent of resolution). */
+  get screenW(): number { return this.app.screen.width; }
+  get screenH(): number { return this.app.screen.height; }
 
   screenToWorld(sx: number, sy: number): { x: number; y: number } {
     const z = this.cam.zoom * TILE;
@@ -245,13 +238,10 @@ export class GameRenderer {
     const vb = this.viewBounds();
     this.fx.view = { x0: vb.x0 * TILE, y0: vb.y0 * TILE, x1: vb.x1 * TILE, y1: vb.y1 * TILE };
 
-    if (w.tick !== this.creepTick && w.tick % 10 === 6) this.updateCreep(w);
-    if (this.creepTick < 0) this.updateCreep(w);
+    this.updateCreep(w, alpha);
+    // fully revealed: skip the map-sized fog blend pass entirely
+    if (this.fogSprite) this.fogSprite.visible = !w.revealAll;
     if (w.tick !== this.fogTick) this.updateFog(w);
-    if (this.creepPattern) {
-      this.creepPattern.tilePosition.set(this.time * 6, this.time * 3);
-      this.creepPattern.alpha = 0.55 + Math.sin(this.time * 2.2) * 0.25;
-    }
 
     this.stamp++;
     const stamp = this.stamp;
@@ -612,9 +602,13 @@ export class GameRenderer {
     }
   }
 
+  private screenGDirty = false;
   private renderScreen(): void {
     const g = this.screenG;
+    // only touch the Graphics while a drag box is (or just was) shown
+    if (!this.dragRect && !this.screenGDirty) return;
     g.clear();
+    this.screenGDirty = !!this.dragRect;
     if (this.dragRect) {
       const d = this.dragRect;
       const x = Math.min(d.x0, d.x1), y = Math.min(d.y0, d.y1), w = Math.abs(d.x1 - d.x0), h = Math.abs(d.y1 - d.y0);
@@ -623,42 +617,41 @@ export class GameRenderer {
   }
 
   // ---------------------------------------------------------------- textures from sim state
-  private updateCreep(w: World): void {
-    if (!this.creepCanvas || !this.creepMaskCanvas) return;
-    this.creepTick = w.tick;
-    const n = w.w * w.h;
-    const c1 = this.creepCanvas.getContext('2d')!;
-    const c2 = this.creepMaskCanvas.getContext('2d')!;
-    const d1 = c1.createImageData(w.w, w.h), d2 = c2.createImageData(w.w, w.h);
-    const a = d1.data, b = d2.data;
-    for (let i = 0; i < n; i++) {
-      const v = w.creep[i];
-      if (v <= 0.02) continue;
-      const k = i * 4;
-      a[k] = 70; a[k + 1] = 4; a[k + 2] = 18; a[k + 3] = Math.min(255, v * 150);
-      b[k] = 255; b[k + 1] = 255; b[k + 2] = 255; b[k + 3] = Math.min(255, v * v * 255);
+  /**
+   * Feeds the creep layer once per 10-tick creep period (the sim recomputes w.creep when
+   * tick % 10 === 5, so it is fresh from tick % 10 === 6). Robust to frames that skip ticks.
+   * The layer re-uploads only when values changed and then blends old→new over the next 10 ticks.
+   */
+  private updateCreep(w: World, alpha: number): void {
+    const c = this.creep;
+    if (!c) return;
+    const epoch = Math.floor((w.tick - 6) / 10);
+    if (epoch !== this.creepEpoch) {
+      const first = Number.isNaN(this.creepEpoch);
+      this.creepEpoch = epoch;
+      if (c.update(w.creep, first)) this.creepBlendTick = w.tick;
     }
-    c1.putImageData(d1, 0, 0);
-    c2.putImageData(d2, 0, 0);
-    this.creepTex!.source.update();
-    this.creepMaskTex!.source.update();
+    // paused: show the latest field as-is (no half-blended frontier while the player plans)
+    c.frame(this.time, w.paused ? 1 : (w.tick - this.creepBlendTick + alpha) / 10);
   }
 
   private updateFog(w: World): void {
-    if (!this.fogCanvas || !this.fogData) return;
+    const d = this.fogData;
+    if (!d || !this.fogSrc) return;
     this.fogTick = w.tick;
-    const d = this.fogData.data;
+    if (w.revealAll) return;
+    // vision only changes every 5 ticks: upload only when a texel actually changed
     const n = w.w * w.h;
-    if (w.revealAll) { for (let i = 0; i < n; i++) d[i * 4 + 3] = 0; }
-    else {
-      for (let i = 0; i < n; i++) {
-        const k = i * 4;
-        d[k] = 4; d[k + 1] = 6; d[k + 2] = 10;
-        d[k + 3] = w.vis[i] ? 0 : w.explored[i] ? 135 : 250;
-      }
+    let changed = false;
+    for (let i = 0; i < n; i++) {
+      const a = w.vis[i] ? 0 : w.explored[i] ? 135 : 250;
+      const k = i * 4;
+      if (d[k + 3] === a) continue;
+      changed = true;
+      // premultiplied rgb(4,6,10)
+      d[k] = Math.round((4 * a) / 255); d[k + 1] = Math.round((6 * a) / 255); d[k + 2] = Math.round((10 * a) / 255); d[k + 3] = a;
     }
-    this.fogCanvas.getContext('2d')!.putImageData(this.fogData, 0, 0);
-    this.fogTex!.source.update();
+    if (changed) this.fogSrc.update();
   }
 
   // ---------------------------------------------------------------- events → fx

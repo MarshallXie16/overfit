@@ -1,8 +1,11 @@
 :root {
   color-scheme: dark;
   --bg: #07090c;
-  --panel: rgba(9, 13, 17, 0.88);
-  --panel-2: rgba(16, 22, 28, 0.92);
+  /* Panels are near-opaque on purpose: there is no backdrop-filter (a blur behind HUD panels forces the compositor to
+     re-blur the game canvas every frame, ~25% of the GPU budget on a 2x display). */
+  --panel: rgba(9, 13, 17, 0.93);
+  --panel-2: rgba(16, 22, 28, 0.94);
+  --panel-grad: linear-gradient(180deg, rgba(15, 22, 27, 0.95) 0%, rgba(8, 12, 15, 0.93) 60%, rgba(7, 10, 13, 0.94) 100%);
   --line: rgba(80, 220, 200, 0.22);
   --line-2: rgba(80, 220, 200, 0.45);
   --teal: #37e0c8;
@@ -30,11 +33,15 @@ button { font-family: var(--font); }
 
 /* ------------------------------------------------------------------ HUD */
 #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
-#hud .panel { pointer-events: auto; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 6px 24px rgba(0,0,0,0.45), inset 0 0 0 1px rgba(255,255,255,0.02); backdrop-filter: blur(3px); }
+/* Perf contract for everything under #hud: it is composited over a WebGL canvas that changes every frame.
+   - no backdrop-filter / filter: blur (re-blurs the canvas every frame);
+   - animate only transform/opacity (compositor-only); never box-shadow, width, letter-spacing, left/top;
+   - JS writes are throttled + skipped when unchanged (see hud.ts). */
+#hud .panel { pointer-events: auto; background: var(--panel-grad); border: 1px solid var(--line); box-shadow: 0 6px 24px rgba(0,0,0,0.45), inset 0 1px 0 rgba(80,220,200,0.07), inset 0 0 0 1px rgba(255,255,255,0.02); }
 .clip { clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px); }
 
 .topbar { position: absolute; top: 0; left: 0; right: 0; height: 40px; display: flex; align-items: center; gap: 4px; padding: 0 10px; border-width: 0 0 1px 0 !important; }
-.res { display: flex; align-items: center; gap: 7px; padding: 0 12px; height: 28px; border-right: 1px solid var(--line); font-family: var(--mono); font-size: 15px; font-weight: 600; cursor: default; position: relative; }
+.res { display: flex; align-items: center; gap: 7px; padding: 0 12px; height: 28px; border-right: 1px solid var(--line); font-family: var(--mono); font-size: 15px; font-weight: 600; cursor: default; position: relative; font-variant-numeric: tabular-nums; }
 .res .lbl { font-family: var(--font); font-size: 10px; letter-spacing: 1.5px; color: var(--muted); text-transform: uppercase; }
 .res .ic { width: 14px; height: 14px; border-radius: 2px; transform: rotate(45deg); }
 .res.scrap .ic { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
@@ -53,7 +60,7 @@ button { font-family: var(--font); }
 .threat .pip.on { background: var(--red); box-shadow: 0 0 6px var(--red); }
 .axstat { font-family: var(--mono); font-size: 12px; color: #ff8095; display: flex; gap: 14px; padding: 0 10px; }
 .axstat span b { color: #ffc0cc; }
-.clock { font-family: var(--mono); font-size: 14px; color: var(--muted); padding: 0 10px; min-width: 64px; text-align: right; }
+.clock { font-family: var(--mono); font-size: 14px; color: var(--muted); padding: 0 10px; min-width: 64px; text-align: right; font-variant-numeric: tabular-nums; }
 .tbtn { pointer-events: auto; background: transparent; color: var(--text); border: 1px solid var(--line); height: 26px; min-width: 34px; font-size: 12px; cursor: pointer; }
 .tbtn:hover { border-color: var(--teal); color: var(--teal); }
 
@@ -90,7 +97,9 @@ button { font-family: var(--font); }
 .mrow .mul.good { color: var(--good); } .mrow .mul.bad { color: var(--red); }
 .model .hint { font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.35; }
 .model .hint b { color: var(--text); font-weight: 600; }
-.model.flash { animation: modelflash 1.2s ease-out; }
+.model::after { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0; box-shadow: inset 0 0 0 2px var(--red), inset 0 0 36px rgba(255,51,85,0.5); }
+.model.flash::after { animation: modelflash 1.2s ease-out; }
+.model.flash2::after { animation: modelflash2 1.2s ease-out; }
 
 /* protocols */
 .protocols { position: absolute; right: 10px; top: 236px; display: flex; gap: 6px; padding: 6px; }
@@ -121,9 +130,13 @@ button { font-family: var(--font); }
 /* bottom */
 .bottom { position: absolute; left: 0; right: 0; bottom: 0; height: 196px; display: flex; align-items: flex-end; gap: 8px; padding: 0 8px 8px; pointer-events: none; }
 .minimap { width: 196px; height: 188px; padding: 6px; flex: none; position: relative; }
-.minimap canvas { width: 184px; height: 176px; image-rendering: pixelated; cursor: pointer; }
+.minimap canvas { position: relative; width: 184px; height: 176px; image-rendering: pixelated; cursor: pointer; }
+/* The minimap canvas is its own compositor layer. A clip-path on one of its ancestors would cost a mask render pass
+   every frame, so the cut-corner frame is drawn by a clipped ::before painted *behind* the canvas instead. */
+#hud .minimap.panel { background: none; border-color: transparent; box-shadow: none; }
+.minimap::before { content: ''; position: absolute; inset: -1px; background: var(--panel-grad); border: 1px solid var(--line); box-shadow: inset 0 1px 0 rgba(80,220,200,0.07); clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px); }
 .selpanel { flex: 1; max-width: 760px; height: 132px; padding: 8px 12px; display: flex; gap: 12px; min-width: 0; margin: 0 auto; }
-.selpanel.empty { background: rgba(9,13,17,0.55) !important; height: 40px; align-items: center; border-color: rgba(80,220,200,0.12) !important; }
+.selpanel.empty { background: rgba(9,13,17,0.74) !important; height: 40px; align-items: center; border-color: rgba(80,220,200,0.12) !important; }
 .cmdcard { width: 268px; height: 188px; padding: 6px; display: grid; grid-template-columns: repeat(4, 60px); grid-auto-rows: 56px; gap: 4px; flex: none; align-content: start; }
 .cbtn { position: relative; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; padding: 0; overflow: hidden; }
 .cbtn img { width: 100%; height: 100%; object-fit: contain; display: block; }
@@ -175,19 +188,37 @@ button { font-family: var(--font); }
 .tooltip .tt-r { color: var(--red); font-size: 11.5px; margin-top: 4px; }
 .tooltip .tt-d { color: #b8c6c4; }
 
-/* edge vignette */
-.vignette { position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 180px rgba(0,0,0,0.65); }
-.vignette.surge { animation: surgevig 1.2s ease-in-out 3; }
-.edgearrow { position: absolute; width: 0; height: 0; border-left: 14px solid transparent; border-right: 14px solid transparent; border-bottom: 26px solid var(--red); filter: drop-shadow(0 0 8px var(--red)); opacity: 0.85; animation: pulse 0.5s ease-in-out infinite alternate; }
+/* edge vignette: static edge gradients that reproduce the old `inset 0 0 180px rgba(0,0,0,.65)` box-shadow falloff
+   (Gaussian, sigma 90px). The surge flash cross-fades a red copy in with opacity only (was an animated 220px inset
+   box-shadow = full-screen blur repaint every frame). Centre stays fully transparent, so it costs no raster tiles. */
+.vignette { position: absolute; inset: 0; pointer-events: none;
+  --vig-k: rgba(0,0,0,0.325), rgba(0,0,0,0.24) 30px, rgba(0,0,0,0.164) 60px, rgba(0,0,0,0.103) 90px, rgba(0,0,0,0.059) 120px, rgba(0,0,0,0.031) 150px, rgba(0,0,0,0.015) 180px, rgba(0,0,0,0) 220px;
+  --vig-r: rgba(255,20,50,0.275), rgba(255,20,50,0.197) 40px, rgba(255,20,50,0.128) 80px, rgba(255,20,50,0.076) 120px, rgba(255,20,50,0.04) 160px, rgba(255,20,50,0.019) 200px, rgba(255,20,50,0) 260px; }
+.vignette::before, .vignette::after { content: ''; position: absolute; inset: 0; background-repeat: no-repeat; }
+.vignette::before { background-image: linear-gradient(to bottom, var(--vig-k)), linear-gradient(to top, var(--vig-k)), linear-gradient(to right, var(--vig-k)), linear-gradient(to left, var(--vig-k));
+  background-size: 100% 220px, 100% 220px, 220px 100%, 220px 100%; background-position: top, bottom, left, right; }
+.vignette::after { opacity: 0; background-image: linear-gradient(to bottom, var(--vig-r)), linear-gradient(to top, var(--vig-r)), linear-gradient(to right, var(--vig-r)), linear-gradient(to left, var(--vig-r));
+  background-size: 100% 260px, 100% 260px, 260px 100%, 260px 100%; background-position: top, bottom, left, right; }
+.vignette.surging::before { animation: vigdim 1.2s ease-in-out 3; }
+.vignette.surging::after { animation: vigred 1.2s ease-in-out 3; }
+.vignette.surging2::before { animation: vigdim2 1.2s ease-in-out 3; }
+.vignette.surging2::after { animation: vigred2 1.2s ease-in-out 3; }
+/* Surge direction arrow: positioned with transform only (own compositor layer); the glow is baked into a static
+   gradient instead of a drop-shadow filter that the compositor would re-run every frame. */
+.edgearrow { position: absolute; left: 0; top: 0; width: 28px; height: 26px; pointer-events: none; opacity: 0.85; will-change: transform, opacity; animation: pulse 0.5s ease-in-out infinite alternate; }
+.edgearrow::before { content: ''; position: absolute; inset: -24px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-24 -24 76 74'%3E%3Cfilter id='g' x='-1' y='-1' width='3' height='3'%3E%3CfeGaussianBlur stdDeviation='8'/%3E%3C/filter%3E%3Cpath d='M14 0L28 26H0z' fill='%23ff3355' filter='url(%23g)'/%3E%3Cpath d='M14 0L28 26H0z' fill='%23ff3355'/%3E%3C/svg%3E") center / 100% 100% no-repeat; }
 .paused-banner { position: absolute; top: 56px; left: 50%; transform: translateX(-50%); padding: 4px 20px; font-size: 13px; letter-spacing: 4px; color: var(--amber); border: 1px solid rgba(255,181,71,0.5); background: rgba(0,0,0,0.6); display: none; }
 
 /* ------------------------------------------------------------------ menus / overlays */
-.overlay { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; background: rgba(3,5,7,0.72); backdrop-filter: blur(4px); pointer-events: auto; }
-.dialog { min-width: 420px; max-width: 760px; max-height: 88vh; overflow: auto; padding: 26px 30px; background: rgba(8,12,15,0.97); border: 1px solid var(--line-2); }
+/* No backdrop-filter here either (a full-screen blur of the live canvas every frame while a menu is open): a darker
+   static scrim with faint scanlines hides the busy game/HUD detail instead. */
+.overlay { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; pointer-events: auto;
+  background: repeating-linear-gradient(0deg, rgba(0,0,0,0.22) 0 1px, rgba(0,0,0,0) 1px 3px), radial-gradient(ellipse at 50% 45%, rgba(3,5,7,0.82) 0%, rgba(3,5,7,0.88) 55%, rgba(2,3,5,0.95) 100%); }
+.dialog { min-width: 420px; max-width: 760px; max-height: 88vh; overflow: auto; padding: 26px 30px; background: linear-gradient(180deg, rgba(13,19,23,0.98) 0%, rgba(8,12,15,0.98) 40%); border: 1px solid var(--line-2); box-shadow: 0 18px 60px rgba(0,0,0,0.6), inset 0 1px 0 rgba(80,220,200,0.08); }
 .dialog h2 { margin: 0 0 4px; font-size: 26px; letter-spacing: 4px; }
 .dialog h3 { margin: 18px 0 8px; font-size: 13px; letter-spacing: 3px; color: var(--teal); }
 .dialog p { color: #b8c6c4; line-height: 1.5; font-size: 14px; }
-.btn { display: block; width: 100%; margin: 8px 0; padding: 11px 16px; font-size: 15px; letter-spacing: 3px; font-weight: 600; text-transform: uppercase; color: var(--text); background: rgba(55,224,200,0.06); border: 1px solid var(--line-2); cursor: pointer; text-align: left; transition: all 0.12s; }
+.btn { display: block; width: 100%; margin: 8px 0; padding: 11px 16px; font-size: 15px; letter-spacing: 3px; font-weight: 600; text-transform: uppercase; color: var(--text); background: rgba(55,224,200,0.06); border: 1px solid var(--line-2); cursor: pointer; text-align: left; transition: background-color 0.12s, border-color 0.12s, color 0.12s, padding-left 0.12s; }
 .btn:hover { background: rgba(55,224,200,0.16); border-color: var(--teal); color: #fff; padding-left: 22px; }
 .btn.primary { background: rgba(55,224,200,0.18); border-color: var(--teal); }
 .btn.danger:hover { background: rgba(255,51,85,0.2); border-color: var(--red); }
@@ -213,9 +244,16 @@ table.keys td:first-child { width: 42%; }
 @keyframes pulse { from { opacity: 0.65; } to { opacity: 1; } }
 @keyframes slidein { from { transform: translateX(-20px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes slidedown { from { transform: translate(-50%, -16px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
-@keyframes announce { 0% { opacity: 0; transform: scale(1.25); letter-spacing: 14px; } 10% { opacity: 1; transform: scale(1); letter-spacing: 6px; } 80% { opacity: 1; } 100% { opacity: 0; } }
-@keyframes modelflash { 0% { box-shadow: 0 0 0 2px var(--red), 0 0 40px rgba(255,51,85,0.6); } 100% { box-shadow: 0 6px 24px rgba(0,0,0,0.45); } }
-@keyframes surgevig { 0%, 100% { box-shadow: inset 0 0 180px rgba(0,0,0,0.65); } 50% { box-shadow: inset 0 0 220px rgba(255,20,50,0.55); } }
+/* transform/opacity only, so these run on the compositor (letter-spacing used to force a main-thread repaint of the
+   blurred text-shadow every frame for the whole 3.2 s; scaleX stands in for the letter-spacing collapse). */
+@keyframes announce { 0% { opacity: 0; transform: scale(1.4, 1.25); } 10% { opacity: 1; transform: none; } 80% { opacity: 1; transform: none; } 100% { opacity: 0; transform: none; } }
+/* Each restartable animation has an identical twin: hud.ts swaps the class to restart it without forcing a reflow. */
+@keyframes modelflash { 0% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes modelflash2 { 0% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes vigdim { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+@keyframes vigdim2 { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+@keyframes vigred { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
+@keyframes vigred2 { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
 
 @media (max-width: 1280px) {
   .alerts { left: 10px; top: auto; bottom: 222px; }
@@ -227,18 +265,23 @@ table.keys td:first-child { width: 42%; }
 }
 
 /* ------------------------------------------------------------------ title */
-.overlay.title { background: linear-gradient(90deg, rgba(3,5,7,0.92) 0%, rgba(3,5,7,0.7) 38%, rgba(3,5,7,0.05) 70%); backdrop-filter: none; justify-content: flex-start; }
+.overlay.title { background: linear-gradient(90deg, rgba(3,5,7,0.92) 0%, rgba(3,5,7,0.7) 38%, rgba(3,5,7,0.05) 70%); justify-content: flex-start; }
 .title-wrap { margin-left: max(16px, 7vw); width: min(440px, calc(100vw - 32px)); }
 .logo { font-size: clamp(48px, 14vw, 92px); font-weight: 700; letter-spacing: 18px; line-height: 1; color: #fff; text-shadow: 0 0 40px rgba(255,51,85,0.55), 0 0 2px #fff; position: relative; }
-.logo::after { content: 'OVERFIT'; position: absolute; left: 3px; top: 0; color: transparent; -webkit-text-stroke: 1px rgba(55,224,200,0.55); text-shadow: none; clip-path: inset(48% 0 38% 0); animation: glitch 3.5s steps(1) infinite; }
+/* Glitch slices: two static clip bands that only move/fade (transform + opacity => compositor-only, no per-frame
+   style/paint; the old version animated clip-path on the main thread forever). */
+.logo::before, .logo::after { content: 'OVERFIT'; position: absolute; left: 3px; top: 0; color: transparent; -webkit-text-stroke: 1px rgba(55,224,200,0.55); text-shadow: none; pointer-events: none; }
+.logo::after { clip-path: inset(48% 0 38% 0); animation: glitch 3.5s steps(1, end) infinite; }
+.logo::before { clip-path: inset(20% 0 66% 0); opacity: 0; animation: glitch2 3.5s steps(1, end) infinite; }
 .tagline { margin: 10px 0 34px 4px; font-size: 15px; letter-spacing: 7px; color: var(--red); }
 .title-menu .btn { font-size: 17px; }
 .foot { margin-top: 26px; font-size: 11px; letter-spacing: 2px; color: var(--muted); }
-@keyframes glitch { 0%, 90% { transform: none; } 92% { transform: translateX(-6px); } 94% { transform: translateX(5px); clip-path: inset(20% 0 66% 0); } 96% { transform: none; } }
+@keyframes glitch { 0% { transform: none; opacity: 1; } 92% { transform: translateX(-6px); opacity: 1; } 94% { transform: none; opacity: 0; } 100% { transform: none; opacity: 0; } }
+@keyframes glitch2 { 0% { transform: none; opacity: 0; } 94% { transform: translateX(5px); opacity: 1; } 96% { transform: none; opacity: 1; } 100% { transform: none; opacity: 1; } }
 
 .bossbar { position: absolute; top: 48px; left: 50%; transform: translateX(-50%); display: none; align-items: center; gap: 10px; font-size: 11px; letter-spacing: 3px; color: var(--red); text-shadow: 0 0 8px rgba(255,51,85,0.7); }
 .bossbar .bb { width: 360px; height: 8px; border: 1px solid rgba(255,51,85,0.6); background: rgba(40,0,8,0.8); position: relative; }
-.bossbar .bb i { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, #a0102a, var(--red)); box-shadow: 0 0 10px var(--red); transition: width 0.2s; }
+.bossbar .bb i { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; transform-origin: 0 50%; background: linear-gradient(90deg, #a0102a, var(--red)); box-shadow: 0 0 10px var(--red); transition: transform 0.2s; }
 
 @media (max-width: 520px) {
   .overlay.title { background: rgba(3,5,7,0.82); }
