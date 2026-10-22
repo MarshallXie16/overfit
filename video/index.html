@@ -1,0 +1,300 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>OVERFIT intro</title>
+<!-- One display face (Chakra Petch, the game's) and one UI face (JetBrains Mono, the game's), self-hosted
+     from the game's @fontsource packages (OFL) so the render needs no network and is reproducible. -->
+<style>
+@font-face{font-family:"Chakra Petch";font-weight:700;src:url("assets/fonts/chakra-petch-latin-700-normal.woff2") format("woff2")}
+@font-face{font-family:"Chakra Petch";font-weight:600;src:url("assets/fonts/chakra-petch-latin-600-normal.woff2") format("woff2")}
+@font-face{font-family:"JetBrains Mono";font-weight:400;src:url("assets/fonts/jetbrains-mono-latin-400-normal.woff2") format("woff2")}
+@font-face{font-family:"JetBrains Mono";font-weight:600;src:url("assets/fonts/jetbrains-mono-latin-600-normal.woff2") format("woff2")}
+html,body{margin:0;background:#07090c}canvas{display:block}
+</style>
+<canvas id="c"></canvas>
+<script src="lib/motion.js"></script>
+<script>
+// ---- Film metadata. render.mjs reads window.FILM and opens this page as ?w=&h= per format.
+const q = new URLSearchParams(location.search);
+const W = Number(q.get('w')) || 1080, H = Number(q.get('h')) || 1920, DUR = 20, FPS = 60;
+const FILM = window.FILM = { w: W, h: H, dur: DUR, fps: FPS };
+const cv = document.getElementById('c'); cv.width = W; cv.height = H;
+const g = cv.getContext('2d');
+const DISPLAY = '"Chakra Petch", sans-serif', UI = '"JetBrains Mono", monospace';
+
+// ---- Real assets only (see assets/README.md). Every UI element in the film is one of these crops.
+const SRC = {
+  hook: 'assets/title-demo.png', map30: 'assets/game-30-fight-z13.png', map40: 'assets/game-40-fight-z13.png',
+  map50: 'assets/game-50-fight-z09.png', model0: 'assets/hud-model-epoch0.png', model8: 'assets/hud-model-50.png',
+  top30: 'assets/hud-topbar-30.png', top40: 'assets/hud-topbar-40.png', top50: 'assets/hud-topbar-50.png',
+  minimap: 'assets/hud-minimap-50.png', sel: 'assets/hud-selpanel-engineer.png', card: 'assets/hud-cmdcard-build.png',
+  proto: 'assets/hud-protocols-50.png', menu: 'assets/ui-title-menu.png', brief: 'assets/ui-dialog-briefing.png',
+};
+const IMG = {};
+window.ready = Promise.all([
+  ...[`700 100px ${DISPLAY}`, `600 100px ${DISPLAY}`, `400 100px ${UI}`, `600 100px ${UI}`].map(f => document.fonts.load(f)),
+  ...Object.entries(SRC).map(([k, src]) => { const im = new Image(); im.src = src; IMG[k] = im; return im.decode(); }),
+]);
+// Crop rectangles [sx, sy, sw, sh] in the 2x captures.
+const MAP30 = [0, 560, 3200, 1100], MAP40 = [0, 560, 3200, 1100], MAP50 = [0, 560, 3200, 1100];   // HUD-free map bands
+const TOPBAR = [1610, 0, 790, 80];                      // "SURGE n ..." box + THREAT pips
+const ALERT30 = [620, 280, 680, 60], ALERT40 = [620, 220, 680, 60], ALERT50 = [620, 250, 680, 60];  // red alert rows
+const MENU = [[0, 0, 882, 122], [0, 140, 882, 122], [0, 280, 882, 122]];   // CAMPAIGN / SKIRMISH / ENDLESS SWARM
+const DEPLOY = [62, 630, 1156, 120];
+
+// ---- Layout: fractions of the frame, so 9:16 and 16:9 lay out instead of cropping.
+const P = H > W, S = Math.min(W, H) / 1080;
+const L = { pad: Math.round(Math.min(W, H) * 0.06), display: Math.round(Math.min(W, H) * 0.17), cx: W / 2, cy: H / 2 };
+const FR = { x: 0, y: 0, w: W, h: H };
+const BG = '#07090c', WHITE = '#ffffff', PAPER = '#d6e2e0', MUTED = '#7d8f8c', TEAL = '#37e0c8', RED = '#ff3355';
+
+// ---- Beat grid: synthetic 120 BPM (beats.json), cuts on downbeats.
+const BEATS = (() => {
+  const bpm = 120, step = 60 / bpm;
+  const beats = Array.from({ length: Math.ceil(DUR / step) }, (_, i) => +(i * step).toFixed(3));
+  return { bpm, beats, downbeats: beats.filter((_, i) => i % 4 === 0), hits: beats };
+})();
+const beat = (i) => BEATS.beats[i] ?? i * (60 / BEATS.bpm);
+const downbeat = (i) => BEATS.downbeats[i] ?? i * (240 / BEATS.bpm);
+
+// ---- Drawing helpers. All pure in t.
+function text(str, x, y, size, o = {}) {
+  g.save(); g.font = `${o.weight || 700} ${size}px ${o.face || DISPLAY}`; g.fillStyle = o.color || WHITE;
+  g.textAlign = o.align || 'left'; g.textBaseline = 'alphabetic'; g.letterSpacing = `${(o.tracking ?? 0.08) * size}px`;
+  g.fillText(str, x, y); g.restore();
+}
+function io(t, t0, t1, k = 170, d = 26) {           // entrance spring + 4-frame alpha, optional exit before t1
+  if (t < t0) return null;
+  const s = spring(t - t0, k, d);
+  let a = clamp((t - t0) / 0.06); if (t1 != null) a = Math.min(a, clamp((t1 - t) / 0.1));
+  return a <= 0 ? null : { s, a };
+}
+function line(str, t, t0, t1, x, y, size, o = {}) {   // type enters by spring from the left; never overshoots
+  const e = io(t, t0, t1); if (!e) return;
+  g.save(); g.globalAlpha *= e.a; text(str, x - 56 * S * (1 - e.s), y, size, o); g.restore();
+}
+function slam(str, t, t0, t1, x, y, size, o = {}) {   // heavy scale-in for the hook words (overdamped: no overshoot)
+  if (t < t0) return; const s = spring(t - t0, ...PRESETS.heavy);
+  let a = clamp((t - t0) / 0.05); if (t1 != null) a = Math.min(a, clamp((t1 - t) / 0.1)); if (a <= 0) return;
+  const sc = 1.18 - 0.18 * s; g.save(); g.globalAlpha *= a; g.translate(x, y); g.scale(sc, sc); text(str, 0, 0, size, o); g.restore();
+}
+function cover(name, src, rect, fx, fy, zoom = 1) {    // the part of crop `src` around (fx,fy) that fills `rect`
+  const im = IMG[name], [sx, sy, sw, sh] = src;
+  const s0 = Math.max(rect.w / sw, rect.h / sh) * zoom, w = rect.w / s0, h = rect.h / s0;
+  const x = clamp(fx - w / 2, sx, sx + sw - w), y = clamp(fy - h / 2, sy, sy + sh - h);
+  g.drawImage(im, x, y, w, h, rect.x, rect.y, rect.w, rect.h);
+}
+function panel(name, x, y, sc = 1, src = null, a = 1) {
+  const im = IMG[name]; g.save(); g.globalAlpha *= a;
+  if (src) g.drawImage(im, src[0], src[1], src[2], src[3], x, y, src[2] * sc, src[3] * sc); else g.drawImage(im, x, y, im.width * sc, im.height * sc);
+  g.restore();
+}
+function panelIn(name, t, t0, t1, x, y, sc, dx, dy, src = null, k = 170, d = 26) {   // springs in from (dx,dy) off its place
+  if (t < t0) return; const s = spring(t - t0, k, d);
+  let a = clamp((t - t0) / 0.08); if (t1 != null) a = Math.min(a, clamp((t1 - t) / 0.12)); if (a <= 0) return;
+  panel(name, x + dx * (1 - s), y + dy * (1 - s), sc, src, a);
+}
+function dim(a, r = FR) { g.fillStyle = `rgba(7,9,12,${a})`; g.fillRect(r.x, r.y, r.w, r.h); }
+function backing(x, y, w, h) { g.fillStyle = 'rgba(7,9,12,0.86)'; g.fillRect(x, y, w, h); }
+function cursor(x, y, pressed = 0) {
+  const sc = (1 - 0.12 * pressed) * 1.35 * S; g.save(); g.translate(x, y); g.scale(sc, sc);
+  g.beginPath(); g.moveTo(0, 0); g.lineTo(0, 26); g.lineTo(6.5, 20); g.lineTo(11, 30); g.lineTo(15.5, 28); g.lineTo(11, 18.5); g.lineTo(19, 18); g.closePath();
+  g.fillStyle = WHITE; g.fill(); g.lineWidth = 1.6; g.strokeStyle = BG; g.lineJoin = 'round'; g.stroke(); g.restore();
+}
+const pressPulse = (t, tc) => t < tc ? 0 : clamp((t - tc) / 0.04) * (1 - spring(t - tc - 0.06, 320, 30));
+function clickRing(x, y, t, tc) {
+  if (t < tc) return; const p = clamp((t - tc) / 0.35); if (p >= 1) return;
+  g.save(); g.globalAlpha *= 1 - p; g.strokeStyle = TEAL; g.lineWidth = 3 * S;
+  g.beginPath(); g.arc(x, y, (8 + 46 * spring(t - tc, 170, 26)) * S, 0, Math.PI * 2); g.stroke(); g.restore();
+}
+function hilite(x, y, w, h, t, tc) {                  // teal ring on a real button, snappy settle
+  if (t < tc) return; const s = spring(t - tc, ...PRESETS.snappy), k = 1.14 - 0.14 * s;
+  g.save(); g.globalAlpha *= clamp((t - tc) / 0.05); g.strokeStyle = TEAL; g.lineWidth = 3 * S;
+  g.strokeRect(x + w / 2 - w * k / 2, y + h / 2 - h * k / 2, w * k, h * k); g.restore();
+}
+function mark(x, y, size, a = 1) {                   // the game's favicon, drawn from its own SVG path
+  const u = size / 32; g.save(); g.globalAlpha *= a; g.translate(x - size / 2, y - size / 2); g.scale(u, u);
+  g.beginPath(); g.moveTo(16, 4); g.lineTo(28, 16); g.lineTo(16, 28); g.lineTo(4, 16); g.closePath();
+  g.lineWidth = 3; g.strokeStyle = RED; g.lineJoin = 'miter'; g.stroke();
+  g.beginPath(); g.arc(16, 16, 4, 0, Math.PI * 2); g.fillStyle = TEAL; g.fill(); g.restore();
+}
+
+// ---- Shared layouts
+const mapRect = () => P ? { x: 0, y: Math.round(0.29 * H), w: W, h: Math.round(0.60 * H) } : FR;
+const MS = P ? 1.15 : 1.0;                            // the hero panel is a little larger in portrait so its text clears 22 px
+const modelA = (MR) => P ? { x: W - (540 * MS + 24) * S, y: MR.y + 128 * S, sc: MS * S } : { x: W - (540 + 24) * S, y: 100 * S, sc: S };     // assemble position
+const modelB = () => P ? { x: L.pad, y: Math.round(0.33 * H), sc: (W - 2 * L.pad) / 540 } : { x: W - 810 * S - L.pad, y: (H - 456 * S) / 2, sc: 1.5 * S };
+function assemblePanels(t, exitAt, MR) {              // t in scene-2 time; everything but the AXIOM MODEL panel
+  const A = modelA(MR);
+  if (P) {
+    panelIn('top30', t, 0.0, exitAt, 0, MR.y, W / 790, 0, -120 * S, TOPBAR);
+    panelIn('proto', t, 0.5, exitAt, W - (512 + 24) * S, A.y + (304 * MS + 26) * S, S, 220 * S, 0);
+    panelIn('minimap', t, 1.0, exitAt, 24 * S, MR.y + MR.h - (376 * 0.9 + 24) * S, 0.9 * S, -220 * S, 0);
+    panelIn('card', t, 1.5, exitAt, W - (536 * 0.9 + 24) * S, MR.y + MR.h - (376 * 0.9 + 24) * S, 0.9 * S, 0, 220 * S);
+  } else {
+    panelIn('top30', t, 0.0, exitAt, (W - 790 * S) / 2, 0, S, 0, -120 * S, TOPBAR);
+    panelIn('proto', t, 0.5, exitAt, W - (512 + 24) * S, A.y + 330 * S, S, 220 * S, 0);
+    panelIn('minimap', t, 1.0, exitAt, 24 * S, H - (376 * 0.85 + 24) * S, 0.85 * S, -220 * S, 0);
+    panelIn('sel', t, 1.0, exitAt, (W - 1520 * 0.6 * S) / 2, H - (264 * 0.6 + 24) * S, 0.6 * S, 0, 220 * S);
+    panelIn('card', t, 1.5, exitAt, W - (536 * 0.8 + 24) * S, H - (376 * 0.8 + 24) * S, 0.8 * S, 0, 220 * S);
+  }
+}
+function lockup(t) {                                  // scenes 9 and 10; t in scene-9 time
+  const D = 150 * S, mx = L.pad + D / 2, my = P ? 0.30 * H : 0.26 * H;
+  if (t >= 0) { const s = spring(t, ...PRESETS.heavy); mark(mx, my, D * (0.4 + 0.6 * s), clamp(t / 0.05)); }
+  const wmSize = P ? 150 * S : 170 * S, wmY = my + D / 2 + 40 * S + wmSize * 0.74;
+  line('OVERFIT', t, 0.5, null, L.pad, wmY, wmSize, { tracking: 0.196 });
+  const tagY = wmY + 70 * S;
+  line('THE SWARM LEARNS YOU.', t, 1.0, null, L.pad + 4, tagY, 30 * S, { weight: 600, tracking: 0.45, color: PAPER });
+  if (t >= 1.5) { const s = spring(t - 1.5, ...PRESETS.snappy); g.fillStyle = TEAL; g.fillRect(L.pad, tagY + 26 * S, 160 * S * s, 6 * S); }
+  return tagY;
+}
+
+// ---- Scenes: one per bar, from = downbeat(i). draw(t) gets time since the scene start.
+const SCENES = [
+  { from: downbeat(0), to: downbeat(1), draw(t) {      // 1 HOOK: the Grid spreading, three words on three beats
+    cover('hook', P ? [560, 0, 1215, 2160] : [300, 0, 2600, 1462], FR, P ? 1000 : 1300, P ? 700 : 600, 1 + 0.12 * smooth(t / 2));
+    dim(0.30);
+    const size = P ? 150 * S : 184 * S, x = L.pad, y0 = P ? 0.30 * H : 0.34 * H, lh = size * 1.06;
+    slam('THE SWARM', t, 0.0, null, x, y0, size, { tracking: 0.06 });
+    slam('LEARNS', t, 0.5, null, x, y0 + lh, size, { tracking: 0.06 });
+    slam('YOU.', t, 1.0, null, x, y0 + 2 * lh, size, { tracking: 0.06 });
+    if (t >= 1.5) { const s = spring(t - 1.5, ...PRESETS.snappy); g.fillStyle = TEAL; g.fillRect(x, y0 + 2 * lh + 36 * S, 0.42 * W * s, 10 * S); }
+  }},
+  { from: downbeat(1), to: downbeat(2), draw(t) {      // 2 ASSEMBLE: the real battle, HUD panels spring in per beat
+    const MR = mapRect();
+    cover('map30', MAP30, MR, 1800, 1110, 1.12 - 0.12 * spring(t, ...PRESETS.default));
+    const A = modelA(MR);
+    panelIn('model0', t, 0.5, null, A.x, A.y, A.sc, 220 * S, 0);
+    assemblePanels(t, null, MR);
+    const e = io(t, 0, null); if (e) {
+      g.save(); g.globalAlpha *= e.a; const x = L.pad - 56 * S * (1 - e.s), y = P ? 0.19 * H : 0.17 * H, sz = P ? 72 * S : 60 * S;
+      text('A BROWSER RTS.', x, y, sz, { tracking: 0.12 }); g.restore();
+    }
+  }},
+  { from: downbeat(2), to: downbeat(3), draw(t) {      // 3 FEATURE 1: push into the AXIOM MODEL panel; epoch 0 -> 8
+    const MR = mapRect(), k = spring(t, ...PRESETS.default);
+    cover('map30', MAP30, MR, 1800 + 500 * k, 1110 - 250 * k, 1 + 0.5 * k);
+    dim(0.6 * k, MR);
+    assemblePanels(t + 2, 2.0, MR);
+    const A = modelA(MR), B = modelB();
+    const x = lerp(A.x, B.x, k), y = lerp(A.y, B.y, k), sc = lerp(A.sc, B.sc, k);
+    const sw = clamp((t - 0.5) / 0.18);                // the swap: outgoing blurs as it fades, incoming lands on the beat
+    if (sw < 1) { g.save(); g.filter = sw > 0 ? `blur(${(3 * sw).toFixed(2)}px)` : 'none'; panel('model0', x, y, sc, null, 1 - sw); g.restore(); }
+    if (sw > 0) panel('model8', x, y, sc, null, sw);
+    const hx = L.pad, hy = P ? 0.17 * H : 0.36 * H, hs = P ? 100 * S : 92 * S;
+    line('IT LEARNS', t, 1.0, null, hx, hy, hs);
+    line('HOW YOU FIGHT.', t, 1.0, null, hx, hy + hs * 1.08, hs);
+    const sy = P ? B.y + 304 * B.sc + 70 * S : hy + hs * 1.08 + 80 * S, ss = 34 * S;
+    line('Every epoch AXIOM retrains on the', t, 1.5, null, hx, sy, ss, { face: UI, weight: 400, color: PAPER, tracking: 0 });
+    line('damage type that hurt it most.', t, 1.5, null, hx, sy + ss * 1.5, ss, { face: UI, weight: 400, color: PAPER, tracking: 0 });
+  }},
+  { from: downbeat(3), to: downbeat(4), draw(t) {      // 4 FEATURE 2: three real surges, one per beat, each bigger
+    const MR = P ? { x: 0, y: Math.round(0.29 * H), w: W, h: Math.round(0.51 * H) } : FR;
+    const st = t < 0.5 ? 0 : t < 1.0 ? 1 : 2, t0 = st * 0.5;
+    const maps = [['map30', MAP30, 1800, 900], ['map40', MAP40, 2000, 900], ['map50', MAP50, 1650, 1110]];
+    cover(maps[st][0], maps[st][1], MR, maps[st][2], maps[st][3], 1.1 - 0.1 * spring(t - t0, ...PRESETS.default));
+    const tops = ['top30', 'top40', 'top50'];
+    panelIn(tops[st], t, t0, null, P ? 0 : (W - 790 * S) / 2, MR.y, P ? W / 790 : S, 0, -60 * S, TOPBAR, 320, 30);
+    const rows = [['map30', ALERT30], ['map40', ALERT40], ['map50', ALERT50]];
+    const rsc = P ? (W - 2 * L.pad) / 680 : 1.4 * S, ry0 = 0.09 * H, rh = 60 * rsc + 16 * S;
+    for (let i = 0; i <= st; i++) panelIn(rows[i][0], t, i * 0.5, null, L.pad, ry0 + i * rh, rsc, -140 * S, 0, rows[i][1]);
+    const hs = P ? 92 * S : 80 * S, hy = P ? 0.86 * H : 0.76 * H;
+    if (!P && t >= 1.0) backing(L.pad - 24 * S, hy - hs * 0.95, 0.42 * W, hs * 2.5);
+    line('EVERY SURGE', t, 1.0, null, L.pad, hy, hs);
+    line('IS BIGGER.', t, 1.0, null, L.pad, hy + hs * 1.1, hs);
+    if (t >= 1.5) { const s = spring(t - 1.5, ...PRESETS.snappy); g.fillStyle = TEAL; g.fillRect(L.pad, hy + hs * 1.1 + 28 * S, 0.36 * W * s, 8 * S); }
+  }},
+  { from: downbeat(4), to: downbeat(5), draw(t) {      // 5 FEATURE 3: cursor builds a turret, then calls the strike
+    const selP = P ? [38 * S, 0.30 * H, 0.66 * S] : [0.40 * W, 0.08 * H, 0.62 * S];
+    const cardP = P ? [W - 536 * 1.3 * S - L.pad, 0.42 * H, 1.3 * S] : [0.40 * W, 0.27 * H, 1.0 * S];
+    const protoP = P ? [L.pad, 0.72 * H, 1.7 * S] : [0.40 * W, 0.65 * H, 1.6 * S];
+    panelIn('sel', t, 0, null, selP[0], selP[1], selP[2], -200 * S, 0);
+    panelIn('card', t, 0, null, cardP[0], cardP[1], cardP[2], 200 * S, 0);
+    panelIn('proto', t, 1.0, null, protoP[0], protoP[1], protoP[2], 0, 200 * S);
+    const T = [cardP[0] + 458 * cardP[2], cardP[1] + 190 * cardP[2]], Tr = [cardP[0] + 394 * cardP[2], cardP[1] + 131 * cardP[2], 128 * cardP[2], 118 * cardP[2]];
+    const F7 = [protoP[0] + 320 * protoP[2], protoP[1] + 70 * protoP[2]], F7r = [protoP[0] + 256 * protoP[2], protoP[1] + 8 * protoP[2], 128 * protoP[2], 124 * protoP[2]];
+    hilite(Tr[0], Tr[1], Tr[2], Tr[3], t, 0.5);
+    hilite(F7r[0], F7r[1], F7r[2], F7r[3], t, 1.5);
+    const hx = L.pad, hy = P ? 0.17 * H : 0.30 * H, hs = P ? 120 * S : 110 * S;
+    line('BUILD.', t, 0, 1.0, hx, hy, hs);
+    line('CALL THE', t, 1.0, null, hx, hy, P ? 100 * S : 96 * S);
+    line('STRIKE.', t, 1.0, null, hx, hy + (P ? 108 : 104) * S, P ? 100 * S : 96 * S);
+    const cx = track(t, [[0, W + 60 * S], [0.1, T[0]], [1.1, F7[0]]]), cy = track(t, [[0, 0.95 * H], [0.1, T[1]], [1.1, F7[1]]]);
+    clickRing(T[0], T[1], t, 0.5); clickRing(F7[0], F7[1], t, 1.5);
+    cursor(cx, cy, pressPulse(t, 0.5) + pressPulse(t, 1.5));
+  }},
+  { from: downbeat(5), to: downbeat(6), draw(t) {      // 6 THE STRIKE LANDS: explosion crop, 4-frame shake keyed to the frame index
+    const fi = Math.floor(t * FPS + 1e-6); let ox = 0, oy = 0;
+    if (fi < 4) { const r = rng(fi + 11); ox = (r() * 2 - 1) * 18 * S; oy = (r() * 2 - 1) * 18 * S; }
+    g.save(); g.translate(ox, oy);
+    cover('map40', [1000, 560, 2200, 1100], { x: -24 * S, y: -24 * S, w: W + 48 * S, h: H + 48 * S }, 1950, 1050, 1.15 - 0.15 * spring(t, ...PRESETS.default));
+    g.restore();
+    dim(0.42);
+    if (P) { slam('STRIKE', t, 0, null, L.pad, 0.20 * H, 170 * S, { tracking: 0.06 }); slam('BACK.', t, 0, null, L.pad, 0.20 * H + 180 * S, 170 * S, { tracking: 0.06 }); }
+    else slam('STRIKE BACK.', t, 0, null, L.pad, 0.36 * H, 170 * S, { tracking: 0.06 });
+    const ly = P ? 0.80 * H : 0.70 * H, ls = 56 * S;
+    line('HACK ITS MACHINES.', t, 1.0, null, L.pad, ly, ls, { weight: 600, color: PAPER, tracking: 0.1 });
+    line('MAKE IT FORGET.', t, 1.5, null, L.pad, ly + ls * 1.3, ls, { weight: 600, color: PAPER, tracking: 0.1 });
+  }},
+  { from: downbeat(6), to: downbeat(7), draw(t) {      // 7 METRIC: a mono counter climbs on the beats
+    const tf = Math.floor(t * FPS + 1e-6) / FPS;        // digits are discrete: key them to the frame, or subframe averaging double-exposes them
+    const v = Math.round(track(tf, [[0, 0], [0.5, 34], [1.0, 67], [1.5, 100]], 320, 30));
+    const e = io(t, 0, null); if (!e) return;
+    const nx = L.pad - 56 * S * (1 - e.s), ny = P ? 0.46 * H : 0.55 * H, ns = P ? 280 * S : 320 * S;
+    g.save(); g.globalAlpha *= e.a;
+    text(String(v), nx, ny, ns, { face: UI, weight: 600, tracking: -0.04 });
+    g.save(); g.font = `600 ${ns}px ${UI}`; g.letterSpacing = `${-0.04 * ns}px`; const nw = g.measureText(String(v)).width; g.restore();
+    text('%', nx + nw + 10 * S, ny, ns * 0.42, { face: UI, weight: 600, color: TEAL, tracking: 0 });
+    text('PROCEDURAL', nx, ny + (P ? 120 : 110) * S, P ? 96 * S : 84 * S, { tracking: 0.12 });
+    g.restore();
+    const facts = ['0 asset files', 'every sprite drawn in code', 'every sound synthesised'];
+    const fx = P ? L.pad : 0.55 * W, fy = P ? ny + 250 * S : 0.40 * H, fs = 34 * S;
+    facts.forEach((f, i) => { const e2 = io(t, 0.5 + i * 0.5, null); if (!e2) return;
+      g.save(); g.globalAlpha *= e2.a; const x = fx - 56 * S * (1 - e2.s), y = fy + i * fs * 2;
+      g.fillStyle = TEAL; g.fillRect(x, y - fs * 0.72, fs * 0.5, fs * 0.5);
+      text(f, x + fs, y, fs, { face: UI, weight: 400, color: PAPER, tracking: 0 }); g.restore(); });
+  }},
+  { from: downbeat(7), to: downbeat(8), draw(t) {      // 8 MODES: the real title menu, one button per beat, cursor hovers
+    const bx = P ? L.pad : 0.50 * W, by = P ? 0.24 * H : 0.26 * H, bsc = P ? (W - 2 * L.pad) / 882 : 1.0 * S, gap = P ? 160 * S : 150 * S;
+    for (let i = 0; i < 3; i++) panelIn('menu', t, i * 0.5, null, bx, by + i * gap, bsc, -100 * S, 0, MENU[i]);
+    if (P) line('THREE WAYS TO LOSE TO A MACHINE.', t, 0, null, L.pad, 0.16 * H, 40 * S, { weight: 600, color: PAPER, tracking: 0.16 });
+    else { line('THREE WAYS TO LOSE', t, 0, null, L.pad, 0.42 * H, 56 * S, { weight: 600, color: PAPER, tracking: 0.12 }); line('TO A MACHINE.', t, 0, null, L.pad, 0.42 * H + 70 * S, 56 * S, { weight: 600, color: PAPER, tracking: 0.12 }); }
+    const C = [bx + 882 * bsc * 0.5, by + 61 * bsc];
+    const cx = track(t, [[0, W + 60 * S], [1.05, C[0] + 120 * S]]), cy = track(t, [[0, 0.95 * H], [1.05, C[1] + 20 * S]]);
+    hilite(bx, by, 882 * bsc, 122 * bsc, t, 1.5);
+    cursor(cx, cy, 0);
+  }},
+  { from: downbeat(8), to: downbeat(9), draw(t) { lockup(t); } },                       // 9 LOGO
+  { from: downbeat(9), to: DUR + 1, draw(t) {           // 10 CTA: the real DEPLOY button, a click, the URL types out
+    const tagY = lockup(t + 2);
+    line('PLAY FREE IN YOUR BROWSER', t, 0, null, L.pad, tagY + 110 * S, 40 * S, { weight: 600, color: TEAL, tracking: 0.3 });
+    const dsc = (P ? W - 2 * L.pad : 950 * S) / 1156, dx = L.pad, dy = tagY + 150 * S, dw = 1156 * dsc, dh = 120 * dsc;
+    const pr = pressPulse(t, 0.5), k = 1 - 0.03 * pr;
+    g.save(); g.translate(dx + dw / 2, dy + dh / 2); g.scale(k, k); g.translate(-dx - dw / 2, -dy - dh / 2);
+    panelIn('brief', t, 0, null, dx, dy, dsc, 0, 120 * S, DEPLOY); g.restore();
+    hilite(dx, dy, dw, dh, t, 0.5);
+    const url = 'marshallxie16.github.io/overfit', tf = Math.floor(t * FPS + 1e-6) / FPS, n = Math.floor(clamp((tf - 1.0) / 0.75) * url.length);
+    if (t >= 1.0) { const us = 36 * S, uy = dy + dh + 80 * S; text(url.slice(0, n), dx, uy, us, { face: UI, weight: 400, color: PAPER, tracking: 0 });
+      g.save(); g.font = `400 ${us}px ${UI}`; const w = g.measureText(url.slice(0, n)).width; g.restore();
+      g.fillStyle = TEAL; g.fillRect(dx + w + 6 * S, uy - us * 0.8, us * 0.55, us * 0.95); }
+    const C = [dx + dw * 0.5, dy + dh * 0.5];
+    const cx = track(t, [[0, W + 60 * S], [0.1, C[0] + 80 * S]]), cy = track(t, [[0, 0.95 * H], [0.1, C[1] + 10 * S]]);
+    clickRing(C[0] + 80 * S, C[1] + 10 * S, t, 0.5);
+    cursor(cx, cy, pr);
+  }},
+];
+FILM.cuts = SCENES.map(s => s.from);   // grid_check.mjs verifies every cut sits on a downbeat
+
+function draw(t) {
+  g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.filter = 'none';
+  g.fillStyle = BG; g.fillRect(0, 0, W, H);
+  for (const s of SCENES) if (t >= s.from && t < s.to) s.draw(t - s.from);
+}
+window.seek = (t) => { draw(t); return true; };
+
+// Live preview in a normal browser; off under Playwright so the render stays a pure function of t.
+if (!navigator.webdriver) window.ready.then(() => {
+  const t0 = performance.now();
+  (function loop() { draw(((performance.now() - t0) / 1000) % DUR); requestAnimationFrame(loop); })();
+});
+</script>

@@ -1,0 +1,12 @@
+[
+  {"t": 0.0, "type": "thump"}, {"t": 0.5, "type": "thump"}, {"t": 1.0, "type": "thump"}, {"t": 1.5, "type": "tick"},
+  {"t": 2.0, "type": "whoosh"}, {"t": 2.5, "type": "pop"}, {"t": 3.0, "type": "pop"}, {"t": 3.5, "type": "pop"},
+  {"t": 4.0, "type": "whoosh"}, {"t": 4.5, "type": "pop"}, {"t": 5.0, "type": "thump"}, {"t": 5.5, "type": "tick"},
+  {"t": 6.0, "type": "thump"}, {"t": 6.5, "type": "thump"}, {"t": 7.0, "type": "thump"}, {"t": 7.5, "type": "tick"},
+  {"t": 8.0, "type": "pop"}, {"t": 8.5, "type": "click"}, {"t": 9.0, "type": "pop"}, {"t": 9.5, "type": "click"},
+  {"t": 10.0, "type": "thump"}, {"t": 10.0, "type": "whoosh", "gain": 0.8}, {"t": 11.0, "type": "tick"}, {"t": 11.5, "type": "tick"},
+  {"t": 12.0, "type": "tick"}, {"t": 12.5, "type": "tick"}, {"t": 13.0, "type": "tick"}, {"t": 13.5, "type": "pop"},
+  {"t": 14.0, "type": "pop"}, {"t": 14.5, "type": "pop"}, {"t": 15.0, "type": "pop"}, {"t": 15.5, "type": "tick"},
+  {"t": 16.0, "type": "thump"}, {"t": 16.5, "type": "whoosh"}, {"t": 17.0, "type": "tick"}, {"t": 17.5, "type": "tick"},
+  {"t": 18.0, "type": "pop"}, {"t": 18.5, "type": "click"}, {"t": 19.0, "type": "tick"}, {"t": 19.5, "type": "tick"}
+]
